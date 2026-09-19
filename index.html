@@ -63,6 +63,10 @@
     height:100%;
     overflow:hidden;
     overscroll-behavior:none;
+    /* iOS paints the area outside the CSS viewport (home-indicator inset)
+       with the root background. Match it to the bottom navigation so there
+       is no detached "dead strip" below the app. */
+    background:var(--paper-raised);
   }
   body{
     position:fixed;
@@ -100,7 +104,7 @@
     overflow:hidden;
     display:flex;
     flex-direction:column;
-    padding:0 0 calc(var(--nav-height) + var(--safe-bottom));
+    padding:0 0 var(--nav-height);
   }
 
   /* ---------- Auth screen ---------- */
@@ -463,12 +467,15 @@
     position:fixed;
     left:50%;
     right:auto;
-    bottom:0;
+    /* In standalone iOS the fixed-position containing block can end at the
+       safe-area edge. Pull the nav itself down through that inset instead of
+       leaving a separate strip below it. */
+    bottom:calc(-1 * var(--safe-bottom));
     transform:translateX(-50%);
     width:100%;
     max-width:520px;
     height:calc(var(--nav-height) + var(--safe-bottom));
-    padding:5px 10px var(--safe-bottom);
+    padding:5px 10px max(var(--safe-bottom), 0px);
     background:var(--paper-raised);
     border-top:1px solid var(--line);
     display:grid;
