@@ -249,14 +249,12 @@ auth.onAuthStateChanged((user) => {
   if (user) {
     document.getElementById("auth-screen").classList.add("hidden");
     document.getElementById("app").classList.remove("hidden");
-    document.getElementById("bottom-nav").classList.remove("hidden");
     switchPage("home");
     attachListeners(user.uid);
     // boot loader stays up until the data listeners below report real data loaded
   } else {
     document.getElementById("auth-screen").classList.remove("hidden");
     document.getElementById("app").classList.add("hidden");
-    document.getElementById("bottom-nav").classList.add("hidden");
     detachListeners();
     hideBootLoader(); // nothing to wait for when logged out
   }
@@ -757,72 +755,9 @@ document.getElementById("cat-delete").addEventListener("click", async () => {
 });
 
 // ============================================================
-// NATIVE VIEWPORT + MODAL HELPERS
+// MODAL HELPERS
 // ============================================================
-const rootEl = document.documentElement;
-
-function syncVisualViewport() {
-  const vv = window.visualViewport;
-  const active = document.activeElement;
-  const editing = !!active && /^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName);
-
-  if (!vv) {
-    rootEl.classList.remove("keyboard-open");
-    rootEl.style.setProperty("--vv-top", "0px");
-    rootEl.style.setProperty("--vv-height", "100dvh");
-    return;
-  }
-
-  const keyboardOpen = editing && (window.innerHeight - vv.height > 100);
-  rootEl.classList.toggle("keyboard-open", keyboardOpen);
-
-  if (keyboardOpen) {
-    rootEl.style.setProperty("--vv-top", `${vv.offsetTop}px`);
-    rootEl.style.setProperty("--vv-height", `${vv.height}px`);
-  } else {
-    rootEl.style.setProperty("--vv-top", "0px");
-    rootEl.style.setProperty("--vv-height", "100dvh");
-  }
-}
-
-if (window.visualViewport) {
-  window.visualViewport.addEventListener("resize", syncVisualViewport);
-  window.visualViewport.addEventListener("scroll", syncVisualViewport);
-}
-window.addEventListener("orientationchange", () => setTimeout(syncVisualViewport, 120));
-document.addEventListener("focusin", () => requestAnimationFrame(syncVisualViewport));
-document.addEventListener("focusout", () => setTimeout(syncVisualViewport, 120));
-
-// Keep the document itself completely fixed like a native app.
-// Scroll is allowed only inside dedicated regions, and even there we stop
-// the gesture at the top/bottom edge so it cannot chain into iOS rubber-band.
-let lastTouchY = 0;
-document.addEventListener("touchstart", (event) => {
-  if (event.touches && event.touches[0]) lastTouchY = event.touches[0].clientY;
-}, { passive: true });
-
-document.addEventListener("touchmove", (event) => {
-  const scrollable = event.target.closest(".page-scroll, .chart-legend, .modal");
-  const touch = event.touches && event.touches[0];
-  if (!scrollable || !touch) {
-    event.preventDefault();
-    return;
-  }
-
-  const currentY = touch.clientY;
-  const movingDown = currentY > lastTouchY;
-  const atTop = scrollable.scrollTop <= 0;
-  const atBottom = scrollable.scrollTop + scrollable.clientHeight >= scrollable.scrollHeight - 1;
-  const cannotScroll = scrollable.scrollHeight <= scrollable.clientHeight + 1;
-
-  if (cannotScroll || (movingDown && atTop) || (!movingDown && atBottom)) {
-    event.preventDefault();
-  }
-  lastTouchY = currentY;
-}, { passive: false });
-
 function openModal(el) {
-  syncVisualViewport();
   el.classList.add("open");
 }
 function closeModal(el) {
@@ -830,10 +765,16 @@ function closeModal(el) {
   if (document.activeElement && typeof document.activeElement.blur === "function") {
     document.activeElement.blur();
   }
-  rootEl.classList.remove("keyboard-open");
-  rootEl.style.setProperty("--vv-top", "0px");
-  rootEl.style.setProperty("--vv-height", "100dvh");
 }
+
+// Keep the document itself stationary like a native app, without changing
+// viewport height or safe-area geometry. Only explicit internal scrollers
+// may consume vertical touch gestures.
+document.addEventListener("touchmove", (event) => {
+  if (!event.target.closest(".page-scroll, .chart-legend, .modal")) {
+    event.preventDefault();
+  }
+}, { passive: false });
 
 // ============================================================
 // EXCEL EXPORT — קובץ אחד, גיליון נפרד לכל חודש

@@ -36,18 +36,7 @@
     --radius: 18px;
     --safe-top: env(safe-area-inset-top, 0px);
     --safe-bottom: env(safe-area-inset-bottom, 0px);
-    --nav-height: 64px;
-    --physical-bottom: var(--safe-bottom);
-    --vv-top: 0px;
-    --vv-height: 100dvh;
     --card-bg-solid: #FFFFFF;
-  }
-
-  /* iOS standalone can occasionally report a zero/partial bottom inset.
-     Keep a home-indicator fallback so the native tab bar reaches the
-     physical bottom of the screen instead of stopping above it. */
-  @supports (-webkit-touch-callout: none) {
-    :root{ --physical-bottom: max(var(--safe-bottom), 34px); }
   }
 
   :root[data-theme="dark"]{
@@ -66,28 +55,15 @@
   :root[data-theme="dark"] body{ color-scheme: dark; }
 
   *{box-sizing:border-box; -webkit-tap-highlight-color: transparent;}
-  html{
-    width:100%;
-    height:100%;
-    margin:0;
-    overflow:hidden;
-    overscroll-behavior:none;
-    background:var(--paper);
-  }
+  html,body{height:100%; overflow:hidden; overscroll-behavior:none;}
   body{
-    position:fixed;
-    inset:0;
-    width:100%;
-    height:100dvh;
-    min-height:0;
     margin:0;
-    overflow:visible;
-    overscroll-behavior:none;
-    touch-action:auto;
     background:var(--paper);
     color:var(--ink);
     font-family:'Heebo', sans-serif;
     -webkit-font-smoothing:antialiased;
+    overscroll-behavior-y:none;
+    touch-action:manipulation;
     transition:background-color .25s ease, color .25s ease;
   }
   h1,h2,h3, .display{
@@ -98,26 +74,11 @@
 
   .num{ font-variant-numeric: tabular-nums; direction:ltr; unicode-bidi: isolate; }
 
-  #app{
-    position:fixed;
-    inset:0;
-    width:100%;
-    max-width:520px;
-    height:100dvh;
-    min-height:0;
-    margin:0 auto;
-    overflow:hidden;
-    display:flex;
-    flex-direction:column;
-    padding:0 0 var(--nav-height);
-  }
+  #app{ max-width:520px; margin:0 auto; height:100vh; height:100dvh; min-height:100%; position:relative; overflow:hidden; display:flex; flex-direction:column; padding:0; }
 
   /* ---------- Auth screen ---------- */
   #auth-screen{
-    width:100%;
-    height:100%;
-    min-height:0;
-    overflow:hidden;
+    min-height:100vh;
     display:flex; flex-direction:column; justify-content:center;
     padding:32px 24px calc(32px + var(--safe-bottom));
     max-width:420px; margin:0 auto;
@@ -273,40 +234,15 @@
 
   /* Modal */
   .modal-backdrop{
-    position:fixed;
-    inset:0;
-    background:rgba(36,34,29,0.45);
-    z-index:50;
-    display:flex;
-    align-items:flex-end;
-    justify-content:center;
-    overflow:hidden;
-    overscroll-behavior:none;
-    opacity:0;
-    pointer-events:none;
-    transition:opacity .2s ease;
-  }
-  :root.keyboard-open .modal-backdrop{
-    top:var(--vv-top);
-    right:0;
-    bottom:auto;
-    left:0;
-    height:var(--vv-height);
+    position:fixed; inset:0; background:rgba(36,34,29,0.45); z-index:50;
+    display:flex; align-items:flex-end; justify-content:center;
+    opacity:0; pointer-events:none; transition:opacity .2s ease;
   }
   .modal-backdrop.open{ opacity:1; pointer-events:auto; }
   .modal{
     background:var(--paper); width:100%; max-width:520px; border-radius:22px 22px 0 0;
-    padding:10px 20px calc(16px + var(--safe-bottom));
-    max-height:min(88%, calc(var(--vv-height) - 8px));
-    overflow-x:hidden; overflow-y:auto;
-    overscroll-behavior:contain;
-    touch-action:pan-y;
-    -webkit-overflow-scrolling:touch;
+    padding:10px 20px calc(24px + var(--safe-bottom)); max-height:88vh; overflow-y:auto;
     transform:translateY(16px); transition:transform .25s ease;
-  }
-  :root.keyboard-open .modal{
-    padding-bottom:14px;
-    max-height:calc(var(--vv-height) - 8px);
   }
   .modal-backdrop.open .modal{ transform:translateY(0); }
   .modal-handle{ width:38px; height:4px; background:var(--line); border-radius:3px; margin:6px auto 14px; }
@@ -427,11 +363,8 @@
   .page-scroll{
     flex:1 1 auto;
     min-height:0;
-    overflow-x:hidden;
     overflow-y:auto;
-    overscroll-behavior-y:contain;
-    -webkit-overflow-scrolling:touch;
-    touch-action:pan-y;
+    overscroll-behavior:contain;
     scrollbar-width:none;
     padding-bottom:4px;
   }
@@ -468,8 +401,6 @@
     gap:6px 12px;
     max-height:86px;
     overflow-y:auto;
-    overscroll-behavior-y:contain;
-    -webkit-overflow-scrolling:touch;
   }
 
   #page-expenses .exp-day-label{ padding:10px 14px 3px; }
@@ -479,18 +410,13 @@
   #page-expenses .exp-amount{ font-size:14px; }
 
   .bottom-nav{
-    position:fixed;
-    left:50%;
-    bottom:calc(-1 * var(--physical-bottom));
-    transform:translateX(-50%);
-    width:100%;
-    max-width:520px;
-    height:calc(var(--nav-height) + var(--physical-bottom));
-    padding:4px 10px var(--physical-bottom);
+    flex:0 0 auto;
+    height:calc(72px + var(--safe-bottom));
+    padding:7px 10px var(--safe-bottom);
     background:var(--paper-raised);
     border-top:1px solid var(--line);
     display:grid;
-    grid-template-columns:1fr 1fr 64px 1fr 1fr;
+    grid-template-columns:1fr 1fr 66px 1fr 1fr;
     align-items:center;
     gap:2px;
     z-index:25;
@@ -507,7 +433,7 @@
     align-items:center;
     justify-content:center;
     gap:3px;
-    height:48px;
+    height:54px;
     border-radius:12px;
     font-size:10.5px;
     font-weight:700;
@@ -516,8 +442,8 @@
   .nav-btn svg{ width:21px; height:21px; }
   .nav-btn.active{ color:var(--teal); }
   .nav-add{
-    width:54px;
-    height:54px;
+    width:56px;
+    height:56px;
     border-radius:18px;
     border:0;
     background:var(--teal);
@@ -529,9 +455,9 @@
     align-self:center;
     box-shadow:0 7px 20px rgba(31,111,92,.32);
     cursor:pointer;
-    transform:translateY(-6px);
+    transform:translateY(-10px);
   }
-  .nav-add:active{ transform:translateY(-6px) scale(.96); }
+  .nav-add:active{ transform:translateY(-10px) scale(.96); }
   .nav-add svg{ width:25px; height:25px; }
 
   @media (max-height:700px){
@@ -540,6 +466,7 @@
     .home-page .receipt{ padding:16px 18px 15px; }
     .home-page .receipt .r-total{ font-size:34px; margin:0 0 9px; }
     .home-page .receipt-dashed{ margin-top:10px; padding-top:9px; }
+    .bottom-nav{ height:calc(66px + var(--safe-bottom)); }
     .nav-btn{ height:48px; }
     .nav-add{ width:52px; height:52px; border-radius:17px; }
   }
@@ -548,6 +475,8 @@
     body{ display:flex; justify-content:center; }
     #app{
       width:520px;
+      height:min(900px, 100dvh);
+      margin:auto;
       border-inline:1px solid var(--line);
       background:var(--paper);
       box-shadow:0 20px 70px rgba(36,34,29,.12);
@@ -697,11 +626,7 @@
     </section>
   </main>
 
-
-
-</div>
-
-  <nav class="bottom-nav hidden" id="bottom-nav" aria-label="ניווט ראשי">
+  <nav class="bottom-nav" aria-label="ניווט ראשי">
     <button class="nav-btn active" data-page-target="home" aria-label="ראשי">
       <svg viewBox="0 0 24 24" fill="none"><path d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-5v-6h-4v6H5a1 1 0 0 1-1-1v-9.5Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg><span>ראשי</span>
     </button>
@@ -718,6 +643,8 @@
       <svg viewBox="0 0 24 24" fill="none"><path d="M6 3h12a1 1 0 0 1 1 1v16l-2.5-1.5L14 20l-2-1.5L10 20l-2.5-1.5L5 20V4a1 1 0 0 1 1-1Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M8.5 8.5h7M8.5 12h7M8.5 15.5h4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg><span>הוצאות</span>
     </button>
   </nav>
+
+</div>
 
 <!-- Add expense modal -->
 <div class="modal-backdrop" id="expense-modal">
@@ -786,6 +713,6 @@
 <script src="vendor-chartjs.js"></script>
 
 <script src="firebase-config.js"></script>
-<script src="app.js?v=29"></script>
+<script src="app.js?v=31"></script>
 </body>
 </html>
