@@ -755,15 +755,73 @@ document.getElementById("cat-delete").addEventListener("click", async () => {
 });
 
 // ============================================================
-// MODAL HELPERS
+// NATIVE VIEWPORT + MODAL HELPERS
 // ============================================================
+const rootEl = document.documentElement;
+let stableViewportHeight = Math.max(
+  window.innerHeight || 0,
+  window.visualViewport ? window.visualViewport.height : 0
+);
+
+function syncVisualViewport() {
+  const vv = window.visualViewport;
+  if (!vv) {
+    rootEl.style.setProperty("--vv-top", "0px");
+    rootEl.style.setProperty("--vv-height", "100dvh");
+    rootEl.classList.remove("keyboard-open");
+    return;
+  }
+
+  const active = document.activeElement;
+  const editing = !!active && /^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName);
+  const visibleHeight = vv.height;
+
+  if (!editing && visibleHeight > stableViewportHeight - 80) {
+    stableViewportHeight = Math.max(stableViewportHeight, visibleHeight, window.innerHeight || 0);
+  }
+
+  const keyboardOpen = editing && visibleHeight < stableViewportHeight - 80;
+  rootEl.classList.toggle("keyboard-open", keyboardOpen);
+  rootEl.style.setProperty("--vv-top", `${keyboardOpen ? vv.offsetTop : 0}px`);
+  rootEl.style.setProperty("--vv-height", `${keyboardOpen ? visibleHeight : stableViewportHeight}px`);
+}
+
+if (window.visualViewport) {
+  window.visualViewport.addEventListener("resize", syncVisualViewport);
+  window.visualViewport.addEventListener("scroll", syncVisualViewport);
+}
+window.addEventListener("orientationchange", () => {
+  stableViewportHeight = Math.max(window.innerHeight || 0, window.visualViewport ? window.visualViewport.height : 0);
+  setTimeout(syncVisualViewport, 120);
+});
+document.addEventListener("focusin", () => requestAnimationFrame(syncVisualViewport));
+document.addEventListener("focusout", () => {
+  setTimeout(() => {
+    stableViewportHeight = Math.max(stableViewportHeight, window.innerHeight || 0, window.visualViewport ? window.visualViewport.height : 0);
+    syncVisualViewport();
+  }, 180);
+});
+
+// Never let the document itself rubber-band like a web page.
+// Only dedicated in-app scroll regions may consume vertical touch movement.
+document.addEventListener("touchmove", (event) => {
+  if (!event.target.closest(".page-scroll, .chart-legend, .modal")) {
+    event.preventDefault();
+  }
+}, { passive: false });
+
 function openModal(el) {
+  syncVisualViewport();
   el.classList.add("open");
-  document.body.style.overflow = "hidden";
 }
 function closeModal(el) {
   el.classList.remove("open");
-  document.body.style.overflow = "";
+  rootEl.classList.remove("keyboard-open");
+  rootEl.style.setProperty("--vv-top", "0px");
+  rootEl.style.setProperty("--vv-height", `${stableViewportHeight}px`);
+  if (document.activeElement && typeof document.activeElement.blur === "function") {
+    document.activeElement.blur();
+  }
 }
 
 // ============================================================
