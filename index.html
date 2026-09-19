@@ -94,17 +94,24 @@
   #app{
     position:fixed;
     top:0;
-    left:50%;
-    transform:translateX(-50%);
+    left:0;
+    right:0;
     width:100%;
     max-width:520px;
     height:100dvh;
     min-height:100dvh;
-    margin:0;
+    margin:0 auto;
     overflow:hidden;
     display:flex;
     flex-direction:column;
     padding:0 0 var(--nav-height);
+    /* No "transform" here on purpose: a transform on this element would
+       create a new containing block for its position:fixed descendants
+       (.bottom-nav), so the nav would be positioned/clipped relative to
+       #app's own box instead of the real device viewport. That's what was
+       breaking the safe-area extension below the nav and causing the
+       gap/jump. Centering is done with left/right + margin:auto instead,
+       which doesn't have that side effect. */
   }
 
   /* ---------- Auth screen ---------- */
