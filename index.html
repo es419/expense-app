@@ -36,7 +36,8 @@
     --radius: 18px;
     --safe-top: env(safe-area-inset-top, 0px);
     --safe-bottom: env(safe-area-inset-bottom, 0px);
-    --nav-height: 68px;
+    --nav-safe-bottom: min(var(--safe-bottom), 24px);
+    --nav-height: 64px;
     --vv-top: 0px;
     --vv-height: 100dvh;
     --card-bg-solid: #FFFFFF;
@@ -61,22 +62,21 @@
   html{
     width:100%;
     height:100%;
+    margin:0;
     overflow:hidden;
     overscroll-behavior:none;
-    /* iOS paints the area outside the CSS viewport (home-indicator inset)
-       with the root background. Match it to the bottom navigation so there
-       is no detached "dead strip" below the app. */
-    background:var(--paper-raised);
+    background:var(--paper);
   }
   body{
     position:fixed;
     inset:0;
     width:100%;
-    height:100%;
+    height:100dvh;
+    min-height:0;
     margin:0;
     overflow:hidden;
     overscroll-behavior:none;
-    touch-action:none;
+    touch-action:auto;
     background:var(--paper);
     color:var(--ink);
     font-family:'Heebo', sans-serif;
@@ -93,25 +93,16 @@
 
   #app{
     position:fixed;
-    top:0;
-    left:0;
-    right:0;
+    inset:0;
     width:100%;
     max-width:520px;
     height:100dvh;
-    min-height:100dvh;
+    min-height:0;
     margin:0 auto;
     overflow:hidden;
     display:flex;
     flex-direction:column;
-    padding:0 0 var(--nav-height);
-    /* No "transform" here on purpose: a transform on this element would
-       create a new containing block for its position:fixed descendants
-       (.bottom-nav), so the nav would be positioned/clipped relative to
-       #app's own box instead of the real device viewport. That's what was
-       breaking the safe-area extension below the nav and causing the
-       gap/jump. Centering is done with left/right + margin:auto instead,
-       which doesn't have that side effect. */
+    padding:0 0 calc(var(--nav-height) + var(--nav-safe-bottom));
   }
 
   /* ---------- Auth screen ---------- */
@@ -276,14 +267,24 @@
   /* Modal */
   .modal-backdrop{
     position:fixed;
-    top:var(--vv-top); left:0; right:0; bottom:auto;
-    height:var(--vv-height);
-    background:rgba(36,34,29,0.45); z-index:50;
-    display:flex; align-items:flex-end; justify-content:center;
+    inset:0;
+    background:rgba(36,34,29,0.45);
+    z-index:50;
+    display:flex;
+    align-items:flex-end;
+    justify-content:center;
     overflow:hidden;
     overscroll-behavior:none;
-    touch-action:none;
-    opacity:0; pointer-events:none; transition:opacity .2s ease;
+    opacity:0;
+    pointer-events:none;
+    transition:opacity .2s ease;
+  }
+  :root.keyboard-open .modal-backdrop{
+    top:var(--vv-top);
+    right:0;
+    bottom:auto;
+    left:0;
+    height:var(--vv-height);
   }
   .modal-backdrop.open{ opacity:1; pointer-events:auto; }
   .modal{
@@ -473,20 +474,16 @@
   .bottom-nav{
     position:fixed;
     left:50%;
-    right:auto;
-    /* In standalone iOS the fixed-position containing block can end at the
-       safe-area edge. Pull the nav itself down through that inset instead of
-       leaving a separate strip below it. */
-    bottom:calc(-1 * var(--safe-bottom));
+    bottom:0;
     transform:translateX(-50%);
     width:100%;
     max-width:520px;
-    height:calc(var(--nav-height) + var(--safe-bottom));
-    padding:5px 10px max(var(--safe-bottom), 0px);
+    height:calc(var(--nav-height) + var(--nav-safe-bottom));
+    padding:4px 10px var(--nav-safe-bottom);
     background:var(--paper-raised);
     border-top:1px solid var(--line);
     display:grid;
-    grid-template-columns:1fr 1fr 66px 1fr 1fr;
+    grid-template-columns:1fr 1fr 64px 1fr 1fr;
     align-items:center;
     gap:2px;
     z-index:25;
@@ -503,7 +500,7 @@
     align-items:center;
     justify-content:center;
     gap:3px;
-    height:54px;
+    height:48px;
     border-radius:12px;
     font-size:10.5px;
     font-weight:700;
@@ -512,8 +509,8 @@
   .nav-btn svg{ width:21px; height:21px; }
   .nav-btn.active{ color:var(--teal); }
   .nav-add{
-    width:56px;
-    height:56px;
+    width:54px;
+    height:54px;
     border-radius:18px;
     border:0;
     background:var(--teal);
@@ -525,9 +522,9 @@
     align-self:center;
     box-shadow:0 7px 20px rgba(31,111,92,.32);
     cursor:pointer;
-    transform:translateY(-10px);
+    transform:translateY(-6px);
   }
-  .nav-add:active{ transform:translateY(-10px) scale(.96); }
+  .nav-add:active{ transform:translateY(-6px) scale(.96); }
   .nav-add svg{ width:25px; height:25px; }
 
   @media (max-height:700px){
@@ -536,8 +533,6 @@
     .home-page .receipt{ padding:16px 18px 15px; }
     .home-page .receipt .r-total{ font-size:34px; margin:0 0 9px; }
     .home-page .receipt-dashed{ margin-top:10px; padding-top:9px; }
-    :root{ --nav-height:64px; }
-    .bottom-nav{ height:calc(var(--nav-height) + var(--safe-bottom)); }
     .nav-btn{ height:48px; }
     .nav-add{ width:52px; height:52px; border-radius:17px; }
   }
@@ -782,6 +777,6 @@
 <script src="vendor-chartjs.js"></script>
 
 <script src="firebase-config.js"></script>
-<script src="app.js"></script>
+<script src="app.js?v=28"></script>
 </body>
 </html>

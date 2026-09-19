@@ -758,56 +758,65 @@ document.getElementById("cat-delete").addEventListener("click", async () => {
 // NATIVE VIEWPORT + MODAL HELPERS
 // ============================================================
 const rootEl = document.documentElement;
-let stableViewportHeight = Math.max(
-  window.innerHeight || 0,
-  window.visualViewport ? window.visualViewport.height : 0
-);
 
 function syncVisualViewport() {
   const vv = window.visualViewport;
+  const active = document.activeElement;
+  const editing = !!active && /^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName);
+
   if (!vv) {
+    rootEl.classList.remove("keyboard-open");
     rootEl.style.setProperty("--vv-top", "0px");
     rootEl.style.setProperty("--vv-height", "100dvh");
-    rootEl.classList.remove("keyboard-open");
     return;
   }
 
-  const active = document.activeElement;
-  const editing = !!active && /^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName);
-  const visibleHeight = vv.height;
-
-  if (!editing && visibleHeight > stableViewportHeight - 80) {
-    stableViewportHeight = Math.max(stableViewportHeight, visibleHeight, window.innerHeight || 0);
-  }
-
-  const keyboardOpen = editing && visibleHeight < stableViewportHeight - 80;
+  const keyboardOpen = editing && (window.innerHeight - vv.height > 100);
   rootEl.classList.toggle("keyboard-open", keyboardOpen);
-  rootEl.style.setProperty("--vv-top", `${keyboardOpen ? vv.offsetTop : 0}px`);
-  rootEl.style.setProperty("--vv-height", `${keyboardOpen ? visibleHeight : stableViewportHeight}px`);
+
+  if (keyboardOpen) {
+    rootEl.style.setProperty("--vv-top", `${vv.offsetTop}px`);
+    rootEl.style.setProperty("--vv-height", `${vv.height}px`);
+  } else {
+    rootEl.style.setProperty("--vv-top", "0px");
+    rootEl.style.setProperty("--vv-height", "100dvh");
+  }
 }
 
 if (window.visualViewport) {
   window.visualViewport.addEventListener("resize", syncVisualViewport);
   window.visualViewport.addEventListener("scroll", syncVisualViewport);
 }
-window.addEventListener("orientationchange", () => {
-  stableViewportHeight = Math.max(window.innerHeight || 0, window.visualViewport ? window.visualViewport.height : 0);
-  setTimeout(syncVisualViewport, 120);
-});
+window.addEventListener("orientationchange", () => setTimeout(syncVisualViewport, 120));
 document.addEventListener("focusin", () => requestAnimationFrame(syncVisualViewport));
-document.addEventListener("focusout", () => {
-  setTimeout(() => {
-    stableViewportHeight = Math.max(stableViewportHeight, window.innerHeight || 0, window.visualViewport ? window.visualViewport.height : 0);
-    syncVisualViewport();
-  }, 180);
-});
+document.addEventListener("focusout", () => setTimeout(syncVisualViewport, 120));
 
-// Never let the document itself rubber-band like a web page.
-// Only dedicated in-app scroll regions may consume vertical touch movement.
+// Keep the document itself completely fixed like a native app.
+// Scroll is allowed only inside dedicated regions, and even there we stop
+// the gesture at the top/bottom edge so it cannot chain into iOS rubber-band.
+let lastTouchY = 0;
+document.addEventListener("touchstart", (event) => {
+  if (event.touches && event.touches[0]) lastTouchY = event.touches[0].clientY;
+}, { passive: true });
+
 document.addEventListener("touchmove", (event) => {
-  if (!event.target.closest(".page-scroll, .chart-legend, .modal")) {
+  const scrollable = event.target.closest(".page-scroll, .chart-legend, .modal");
+  const touch = event.touches && event.touches[0];
+  if (!scrollable || !touch) {
+    event.preventDefault();
+    return;
+  }
+
+  const currentY = touch.clientY;
+  const movingDown = currentY > lastTouchY;
+  const atTop = scrollable.scrollTop <= 0;
+  const atBottom = scrollable.scrollTop + scrollable.clientHeight >= scrollable.scrollHeight - 1;
+  const cannotScroll = scrollable.scrollHeight <= scrollable.clientHeight + 1;
+
+  if (cannotScroll || (movingDown && atTop) || (!movingDown && atBottom)) {
     event.preventDefault();
   }
+  lastTouchY = currentY;
 }, { passive: false });
 
 function openModal(el) {
@@ -816,12 +825,12 @@ function openModal(el) {
 }
 function closeModal(el) {
   el.classList.remove("open");
-  rootEl.classList.remove("keyboard-open");
-  rootEl.style.setProperty("--vv-top", "0px");
-  rootEl.style.setProperty("--vv-height", `${stableViewportHeight}px`);
   if (document.activeElement && typeof document.activeElement.blur === "function") {
     document.activeElement.blur();
   }
+  rootEl.classList.remove("keyboard-open");
+  rootEl.style.setProperty("--vv-top", "0px");
+  rootEl.style.setProperty("--vv-height", "100dvh");
 }
 
 // ============================================================
