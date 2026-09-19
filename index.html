@@ -55,10 +55,23 @@
   :root[data-theme="dark"] body{ color-scheme: dark; }
 
   *{box-sizing:border-box; -webkit-tap-highlight-color: transparent;}
-  html,body{height:100%; overflow:hidden; overscroll-behavior:none;}
+  /*
+    iOS standalone PWA note:
+    With viewport-fit=cover + black-translucent, percentage height on the
+    root can be resolved against WebKit's shortened standalone viewport and
+    leave a status-bar-sized "chin" below the app. Anchor the document to
+    100vh instead, then let the app fill that single root height.
+  */
+  html,body{height:100%; min-height:100%; overflow:hidden; overscroll-behavior:none;}
+  html{ background:var(--paper-raised); }
+  @media (display-mode: standalone){
+    html,body{ height:100vh; min-height:100vh; }
+  }
   body{
     margin:0;
-    background:var(--paper);
+    /* If iOS still exposes a system-owned strip outside the web layer, its
+       sampled under-page color now matches the bottom navigation. */
+    background:var(--paper-raised);
     color:var(--ink);
     font-family:'Heebo', sans-serif;
     -webkit-font-smoothing:antialiased;
@@ -73,11 +86,12 @@
 
   .num{ font-variant-numeric: tabular-nums; direction:ltr; unicode-bidi: isolate; }
 
-  #app{ max-width:520px; margin:0 auto; height:100vh; height:100dvh; min-height:100%; position:relative; overflow:hidden; display:flex; flex-direction:column; padding:0; }
+  #app{ max-width:520px; margin:0 auto; height:100%; min-height:0; position:relative; overflow:hidden; display:flex; flex-direction:column; padding:0; background:var(--paper); }
 
   /* ---------- Auth screen ---------- */
   #auth-screen{
     min-height:100vh;
+    background:var(--paper);
     display:flex; flex-direction:column; justify-content:center;
     padding:32px 24px calc(32px + var(--safe-bottom));
     max-width:420px; margin:0 auto;
@@ -720,6 +734,6 @@
 <script src="vendor-chartjs.js"></script>
 
 <script src="firebase-config.js"></script>
-<script src="app.js?v=32"></script>
+<script src="app.js?v=33"></script>
 </body>
 </html>
