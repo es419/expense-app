@@ -37,6 +37,9 @@
     --safe-top: env(safe-area-inset-top, 0px);
     --safe-bottom: env(safe-area-inset-bottom, 0px);
     --card-bg-solid: #FFFFFF;
+    --nav-glass: rgba(255,255,255,0.80);
+    --nav-glass-border: rgba(255,255,255,0.78);
+    --nav-active: rgba(31,111,92,0.12);
   }
 
   :root[data-theme="dark"]{
@@ -50,6 +53,9 @@
     --alert-tint: rgba(180,72,58,0.22);
     --shadow: 0 1px 2px rgba(0,0,0,0.45), 0 6px 20px rgba(0,0,0,0.35);
     --card-bg-solid: #26241D;
+    --nav-glass: rgba(38,36,29,0.82);
+    --nav-glass-border: rgba(255,255,255,0.08);
+    --nav-active: rgba(111,209,176,0.14);
   }
 
   :root[data-theme="dark"] body{ color-scheme: dark; }
@@ -430,22 +436,61 @@
   #page-expenses .exp-cat{ font-size:14px; }
   #page-expenses .exp-amount{ font-size:14px; }
 
+  /* StudyFlow-style floating navigation: the shell height remains part of the
+     normal app layout so the iOS bottom-gap fix is left completely intact. */
   .bottom-nav{
-    flex:0 0 70px;
-    height:70px;
-    padding:5px 10px clamp(5px, var(--safe-bottom), 10px);
-    background:var(--paper-raised);
-    border-top:1px solid var(--line);
+    flex:0 0 96px;
+    height:96px;
+    padding:9px 20px 13px;
+    background:transparent;
+    border:0;
     display:grid;
-    grid-template-columns:1fr 1fr 66px 1fr 1fr;
+    grid-template-columns:repeat(5,minmax(0,1fr));
     align-items:center;
     gap:2px;
+    position:relative;
+    overflow:visible;
+    isolation:isolate;
     z-index:25;
-    box-shadow:0 -8px 24px rgba(36,34,29,0.05);
-    backdrop-filter:blur(18px);
-    -webkit-backdrop-filter:blur(18px);
   }
+  .bottom-nav::before{
+    content:"";
+    position:absolute;
+    inset:6px 12px 8px;
+    border:1px solid color-mix(in srgb, var(--line) 72%, transparent);
+    border-radius:34px;
+    background:var(--nav-glass);
+    box-shadow:0 12px 34px rgba(36,34,29,0.13), 0 2px 8px rgba(36,34,29,0.06);
+    backdrop-filter:blur(24px) saturate(1.25);
+    -webkit-backdrop-filter:blur(24px) saturate(1.25);
+    z-index:0;
+    pointer-events:none;
+  }
+  .nav-active-pill{
+    position:absolute;
+    top:13px;
+    left:0;
+    width:0;
+    height:62px;
+    border-radius:31px;
+    border:1px solid color-mix(in srgb, var(--teal) 18%, var(--line));
+    background:color-mix(in srgb, var(--teal-tint) 62%, var(--paper-raised));
+    box-shadow:0 2px 8px rgba(36,34,29,0.04), inset 0 0 0 1px rgba(255,255,255,0.28);
+    opacity:0;
+    transform:translate3d(0,0,0);
+    transition:
+      transform .38s cubic-bezier(.22,1,.36,1),
+      width .38s cubic-bezier(.22,1,.36,1),
+      opacity .16s ease;
+    z-index:1;
+    pointer-events:none;
+    will-change:transform,width;
+  }
+  .bottom-nav.nav-ready .nav-active-pill{ opacity:1; }
+  .nav-active-pill.no-animate{ transition:none !important; }
   .nav-btn{
+    min-width:0;
+    padding:0 4px;
     border:0;
     background:transparent;
     color:var(--ink-soft);
@@ -453,33 +498,60 @@
     flex-direction:column;
     align-items:center;
     justify-content:center;
-    gap:3px;
-    height:50px;
-    border-radius:12px;
+    gap:4px;
+    height:62px;
+    border-radius:31px;
     font-size:10.5px;
     font-weight:700;
     cursor:pointer;
+    position:relative;
+    z-index:2;
+    transition:color .24s ease, transform .24s cubic-bezier(.22,1,.36,1);
   }
-  .nav-btn svg{ width:21px; height:21px; }
+  .nav-btn svg{
+    width:22px;
+    height:22px;
+    flex:none;
+    transition:transform .32s cubic-bezier(.22,1,.36,1), opacity .24s ease;
+  }
+  .nav-btn span{ transition:font-weight .22s ease, opacity .22s ease; }
   .nav-btn.active{ color:var(--teal); }
+  .nav-btn.active span{ font-weight:800; color:var(--ink); }
+  .nav-btn.active svg{ transform:translateY(-1px) scale(1.06); }
+  .nav-btn:active{ transform:scale(.96); }
+
+  /* Center action lives inside the navigation capsule as the true middle slot.
+     It shares the same grid alignment as the four tabs, while the glyph is
+     geometrically centered inside its button. */
   .nav-add{
-    width:56px;
-    height:56px;
-    border-radius:18px;
-    border:0;
-    background:var(--teal);
-    color:white;
-    display:flex;
-    align-items:center;
-    justify-content:center;
+    position:relative;
     justify-self:center;
     align-self:center;
-    box-shadow:0 7px 20px rgba(31,111,92,.32);
+    width:58px;
+    height:58px;
+    padding:0;
+    margin:0;
+    line-height:0;
+    -webkit-appearance:none;
+    appearance:none;
+    border-radius:20px;
+    border:1px solid rgba(255,255,255,.22);
+    background:var(--teal);
+    color:white;
+    display:grid;
+    place-items:center;
+    box-shadow:0 8px 20px rgba(31,111,92,.26);
     cursor:pointer;
-    transform:translateY(-7px);
+    z-index:3;
+    transition:transform .22s cubic-bezier(.22,1,.36,1), box-shadow .22s ease;
   }
-  .nav-add:active{ transform:translateY(-7px) scale(.96); }
-  .nav-add svg{ width:25px; height:25px; }
+  .nav-add:active{ transform:scale(.94); box-shadow:0 4px 12px rgba(31,111,92,.22); }
+  .nav-add svg{
+    width:28px;
+    height:28px;
+    display:block;
+    flex:none;
+  }
 
   @media (max-height:700px){
     .app-header{ padding-top:calc(8px + var(--safe-top)); padding-bottom:5px; }
@@ -487,9 +559,12 @@
     .home-page .receipt{ padding:16px 18px 15px; }
     .home-page .receipt .r-total{ font-size:34px; margin:0 0 9px; }
     .home-page .receipt-dashed{ margin-top:10px; padding-top:9px; }
-    .bottom-nav{ flex-basis:64px; height:64px; }
-    .nav-btn{ height:48px; }
-    .nav-add{ width:52px; height:52px; border-radius:17px; }
+    .bottom-nav{ flex-basis:88px; height:88px; padding:7px 18px 11px; }
+    .bottom-nav::before{ inset:5px 10px 7px; border-radius:33px; }
+    .nav-active-pill{ top:11px; height:56px; border-radius:28px; }
+    .nav-btn{ height:56px; border-radius:28px; }
+    .nav-add{ width:54px; height:54px; border-radius:18px; }
+    .nav-add svg{ width:26px; height:26px; }
   }
 
   @media (min-width:700px){
@@ -648,6 +723,7 @@
   </main>
 
   <nav class="bottom-nav" aria-label="ניווט ראשי">
+    <span class="nav-active-pill" aria-hidden="true"></span>
     <button class="nav-btn active" data-page-target="home" aria-label="ראשי">
       <svg viewBox="0 0 24 24" fill="none"><path d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-5v-6h-4v6H5a1 1 0 0 1-1-1v-9.5Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg><span>ראשי</span>
     </button>
@@ -734,6 +810,6 @@
 <script src="vendor-chartjs.js"></script>
 
 <script src="firebase-config.js"></script>
-<script src="app.js?v=33"></script>
+<script src="app.js?v=38"></script>
 </body>
 </html>

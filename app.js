@@ -143,6 +143,34 @@ function expensesForCurrentMonth() {
 // APP NAVIGATION
 // ============================================================
 const APP_PAGES = new Set(["home", "categories", "insights", "expenses"]);
+const bottomNav = document.querySelector(".bottom-nav");
+const navActivePill = bottomNav?.querySelector(".nav-active-pill");
+let navIndicatorFrame = 0;
+
+function syncNavActivePill(animate = true) {
+  if (!bottomNav || !navActivePill) return;
+  const activeBtn = bottomNav.querySelector(".nav-btn.active[data-page-target]");
+  if (!activeBtn) return;
+
+  cancelAnimationFrame(navIndicatorFrame);
+  navIndicatorFrame = requestAnimationFrame(() => {
+    // The app is hidden while logged out. Wait until the nav has real
+    // dimensions so the indicator never animates in from a bogus 0px slot.
+    if (!bottomNav.offsetWidth || !activeBtn.offsetWidth) return;
+
+    const inset = 4;
+    const shouldAnimate = animate && bottomNav.classList.contains("nav-ready");
+    if (!shouldAnimate) navActivePill.classList.add("no-animate");
+
+    navActivePill.style.width = `${Math.max(0, activeBtn.offsetWidth - inset * 2)}px`;
+    navActivePill.style.transform = `translate3d(${activeBtn.offsetLeft + inset}px, 0, 0)`;
+    bottomNav.classList.add("nav-ready");
+
+    if (!shouldAnimate) {
+      requestAnimationFrame(() => navActivePill.classList.remove("no-animate"));
+    }
+  });
+}
 
 document.querySelectorAll(".nav-btn[data-page-target]").forEach((btn) => {
   btn.addEventListener("click", () => switchPage(btn.dataset.pageTarget));
@@ -158,6 +186,7 @@ function switchPage(page) {
   document.querySelectorAll(".nav-btn[data-page-target]").forEach((btn) => {
     btn.classList.toggle("active", btn.dataset.pageTarget === page);
   });
+  syncNavActivePill(true);
 
   // A Chart.js canvas must be measured while visible. Rebuild it only when
   // the insights page is actually on screen, avoiding zero-size charts.
@@ -165,6 +194,10 @@ function switchPage(page) {
     requestAnimationFrame(() => renderChart());
   }
 }
+
+// Keep the moving selector exactly under its tab after rotations/resizes.
+window.addEventListener("resize", () => syncNavActivePill(false), { passive: true });
+requestAnimationFrame(() => syncNavActivePill(false));
 
 // ============================================================
 // AUTH
