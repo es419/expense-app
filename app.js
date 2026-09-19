@@ -40,7 +40,7 @@ document.getElementById("theme-toggle-btn").addEventListener("click", () => {
   applyTheme(next);
   localStorage.setItem("theme-preference", next);
   // re-render the current chart so its text/border colors match the new theme
-  if (state.categoriesLoaded && state.expensesLoaded) renderChart();
+  if (state.categoriesLoaded && state.expensesLoaded && state.currentPage === "insights") renderChart();
 });
 
 function isDarkTheme() {
@@ -94,6 +94,7 @@ let state = {
   currentMonth: new Date().getMonth(),
   currentYear: new Date().getFullYear(),
   chartMode: "pie",
+  currentPage: "home",
   editingCategoryId: null,
   unsubExpenses: null,
   unsubCategories: null,
@@ -136,6 +137,33 @@ function paymentName(id) {
 function expensesForCurrentMonth() {
   const key = monthKey(state.currentYear, state.currentMonth);
   return state.expenses.filter(e => e.date && e.date.startsWith(key));
+}
+
+// ============================================================
+// APP NAVIGATION
+// ============================================================
+const APP_PAGES = new Set(["home", "categories", "insights", "expenses"]);
+
+document.querySelectorAll(".nav-btn[data-page-target]").forEach((btn) => {
+  btn.addEventListener("click", () => switchPage(btn.dataset.pageTarget));
+});
+
+function switchPage(page) {
+  if (!APP_PAGES.has(page)) return;
+  state.currentPage = page;
+
+  document.querySelectorAll(".app-page").forEach((el) => {
+    el.classList.toggle("active", el.dataset.page === page);
+  });
+  document.querySelectorAll(".nav-btn[data-page-target]").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.pageTarget === page);
+  });
+
+  // A Chart.js canvas must be measured while visible. Rebuild it only when
+  // the insights page is actually on screen, avoiding zero-size charts.
+  if (page === "insights" && state.categoriesLoaded && state.expensesLoaded) {
+    requestAnimationFrame(() => renderChart());
+  }
 }
 
 // ============================================================
@@ -221,13 +249,12 @@ auth.onAuthStateChanged((user) => {
   if (user) {
     document.getElementById("auth-screen").classList.add("hidden");
     document.getElementById("app").classList.remove("hidden");
-    document.getElementById("fab").classList.remove("hidden");
+    switchPage("home");
     attachListeners(user.uid);
     // boot loader stays up until the data listeners below report real data loaded
   } else {
     document.getElementById("auth-screen").classList.remove("hidden");
     document.getElementById("app").classList.add("hidden");
-    document.getElementById("fab").classList.add("hidden");
     detachListeners();
     hideBootLoader(); // nothing to wait for when logged out
   }
@@ -313,7 +340,7 @@ function renderAll() {
   renderMonthLabel();
   safeRender(renderReceipt, "receipt");
   safeRender(renderCategoryList, "category-list");
-  safeRender(renderChart, "chart");
+  if (state.currentPage === "insights") safeRender(renderChart, "chart");
   safeRender(renderExpenseList, "expense-list");
 }
 
@@ -363,7 +390,7 @@ function renderReceipt() {
   const topCatId = Object.keys(byCat).sort((a,b) => byCat[b]-byCat[a])[0];
   document.getElementById("stat-top").textContent = topCatId ? catById(topCatId).name : "—";
 
-  
+
 }
 
 function getDaysElapsedInMonth() {
@@ -602,7 +629,7 @@ const expModal = document.getElementById("expense-modal");
 let selectedExpCat = null;
 let selectedExpPayment = "credit";
 
-document.getElementById("open-add-expense").addEventListener("click", () => openExpenseModal());
+document.getElementById("nav-add-expense").addEventListener("click", () => openExpenseModal());
 document.getElementById("exp-cancel").addEventListener("click", () => closeModal(expModal));
 expModal.addEventListener("click", (e) => { if (e.target === expModal) closeModal(expModal); });
 
