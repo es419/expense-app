@@ -642,7 +642,6 @@ function openExpenseModal() {
   renderExpCatChips();
   renderExpPaymentChips();
   openModal(expModal);
-  setTimeout(() => document.getElementById("exp-amount").focus(), 300);
 }
 
 function renderExpPaymentChips() {
@@ -755,21 +754,45 @@ document.getElementById("cat-delete").addEventListener("click", async () => {
 });
 
 // ============================================================
-// MODAL HELPERS
+// MODAL + NATIVE VIEWPORT HELPERS
 // ============================================================
-function openModal(el) {
-  el.classList.add("open");
+let activeModal = null;
+
+function syncOpenModalViewport() {
+  if (!activeModal || !activeModal.classList.contains("open")) return;
+  const vv = window.visualViewport;
+  if (!vv) {
+    activeModal.style.setProperty("--modal-vv-top", "0px");
+    activeModal.style.setProperty("--modal-vv-height", "100dvh");
+    return;
+  }
+  activeModal.style.setProperty("--modal-vv-top", `${vv.offsetTop}px`);
+  activeModal.style.setProperty("--modal-vv-height", `${vv.height}px`);
 }
+
+if (window.visualViewport) {
+  window.visualViewport.addEventListener("resize", syncOpenModalViewport);
+  window.visualViewport.addEventListener("scroll", syncOpenModalViewport);
+}
+
+function openModal(el) {
+  activeModal = el;
+  el.classList.add("open");
+  syncOpenModalViewport();
+}
+
 function closeModal(el) {
-  el.classList.remove("open");
   if (document.activeElement && typeof document.activeElement.blur === "function") {
     document.activeElement.blur();
   }
+  el.classList.remove("open");
+  el.style.removeProperty("--modal-vv-top");
+  el.style.removeProperty("--modal-vv-height");
+  if (activeModal === el) activeModal = null;
 }
 
-// Keep the document itself stationary like a native app, without changing
-// viewport height or safe-area geometry. Only explicit internal scrollers
-// may consume vertical touch gestures.
+// The document itself never scrolls or rubber-bands. Only explicit internal
+// scrollers may consume vertical gestures, so the shell behaves like an app.
 document.addEventListener("touchmove", (event) => {
   if (!event.target.closest(".page-scroll, .chart-legend, .modal")) {
     event.preventDefault();
