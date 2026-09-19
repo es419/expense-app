@@ -36,11 +36,18 @@
     --radius: 18px;
     --safe-top: env(safe-area-inset-top, 0px);
     --safe-bottom: env(safe-area-inset-bottom, 0px);
-    --nav-safe-bottom: min(var(--safe-bottom), 24px);
     --nav-height: 64px;
+    --physical-bottom: var(--safe-bottom);
     --vv-top: 0px;
     --vv-height: 100dvh;
     --card-bg-solid: #FFFFFF;
+  }
+
+  /* iOS standalone can occasionally report a zero/partial bottom inset.
+     Keep a home-indicator fallback so the native tab bar reaches the
+     physical bottom of the screen instead of stopping above it. */
+  @supports (-webkit-touch-callout: none) {
+    :root{ --physical-bottom: max(var(--safe-bottom), 34px); }
   }
 
   :root[data-theme="dark"]{
@@ -74,7 +81,7 @@
     height:100dvh;
     min-height:0;
     margin:0;
-    overflow:hidden;
+    overflow:visible;
     overscroll-behavior:none;
     touch-action:auto;
     background:var(--paper);
@@ -102,7 +109,7 @@
     overflow:hidden;
     display:flex;
     flex-direction:column;
-    padding:0 0 calc(var(--nav-height) + var(--nav-safe-bottom));
+    padding:0 0 var(--nav-height);
   }
 
   /* ---------- Auth screen ---------- */
@@ -474,12 +481,12 @@
   .bottom-nav{
     position:fixed;
     left:50%;
-    bottom:0;
+    bottom:calc(-1 * var(--physical-bottom));
     transform:translateX(-50%);
     width:100%;
     max-width:520px;
-    height:calc(var(--nav-height) + var(--nav-safe-bottom));
-    padding:4px 10px var(--nav-safe-bottom);
+    height:calc(var(--nav-height) + var(--physical-bottom));
+    padding:4px 10px var(--physical-bottom);
     background:var(--paper-raised);
     border-top:1px solid var(--line);
     display:grid;
@@ -690,7 +697,11 @@
     </section>
   </main>
 
-  <nav class="bottom-nav" aria-label="ניווט ראשי">
+
+
+</div>
+
+  <nav class="bottom-nav hidden" id="bottom-nav" aria-label="ניווט ראשי">
     <button class="nav-btn active" data-page-target="home" aria-label="ראשי">
       <svg viewBox="0 0 24 24" fill="none"><path d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-5v-6h-4v6H5a1 1 0 0 1-1-1v-9.5Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg><span>ראשי</span>
     </button>
@@ -707,8 +718,6 @@
       <svg viewBox="0 0 24 24" fill="none"><path d="M6 3h12a1 1 0 0 1 1 1v16l-2.5-1.5L14 20l-2-1.5L10 20l-2.5-1.5L5 20V4a1 1 0 0 1 1-1Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M8.5 8.5h7M8.5 12h7M8.5 15.5h4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg><span>הוצאות</span>
     </button>
   </nav>
-
-</div>
 
 <!-- Add expense modal -->
 <div class="modal-backdrop" id="expense-modal">
@@ -777,6 +786,6 @@
 <script src="vendor-chartjs.js"></script>
 
 <script src="firebase-config.js"></script>
-<script src="app.js?v=28"></script>
+<script src="app.js?v=29"></script>
 </body>
 </html>

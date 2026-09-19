@@ -1,10 +1,10 @@
 // Service worker: offline app shell with fresh code on every online launch.
 
-const CACHE_NAME = "expense-ledger-v28";
+const CACHE_NAME = "expense-ledger-v29";
 const APP_SHELL = [
   "./",
   "./index.html",
-  "./app.js?v=28",
+  "./app.js?v=29",
   "./firebase-config.js",
   "./manifest.json",
   "./icon-192.png",

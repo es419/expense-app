@@ -249,12 +249,14 @@ auth.onAuthStateChanged((user) => {
   if (user) {
     document.getElementById("auth-screen").classList.add("hidden");
     document.getElementById("app").classList.remove("hidden");
+    document.getElementById("bottom-nav").classList.remove("hidden");
     switchPage("home");
     attachListeners(user.uid);
     // boot loader stays up until the data listeners below report real data loaded
   } else {
     document.getElementById("auth-screen").classList.remove("hidden");
     document.getElementById("app").classList.add("hidden");
+    document.getElementById("bottom-nav").classList.add("hidden");
     detachListeners();
     hideBootLoader(); // nothing to wait for when logged out
   }
