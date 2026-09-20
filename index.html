@@ -254,8 +254,8 @@
   /* Modal */
   .modal-backdrop{
     position:fixed;
-    left:0; right:0; top:var(--modal-vv-top, 0px);
-    height:var(--modal-vv-height, 100dvh);
+    inset:0;
+    height:100dvh;
     background:rgba(36,34,29,0.45); z-index:50;
     display:flex; align-items:flex-end; justify-content:center;
     overflow:hidden;
@@ -265,7 +265,7 @@
   .modal{
     background:var(--paper); width:100%; max-width:520px; border-radius:22px 22px 0 0;
     padding:10px 20px 18px;
-    max-height:calc(var(--modal-vv-height, 100dvh) - 8px);
+    max-height:calc(100dvh - 8px);
     overflow-x:hidden; overflow-y:auto;
     overscroll-behavior:contain;
     -webkit-overflow-scrolling:touch;
@@ -301,6 +301,27 @@
     z-index:60; opacity:0; transition:all .25s ease; max-width:calc(100% - 40px); text-align:center;
   }
   .toast.show{ opacity:1; transform:translateX(-50%) translateY(0); }
+
+  /* Native-style keyboard editing: only the active field floats above the keyboard. */
+  .keyboard-field-placeholder{
+    visibility:hidden!important;
+    pointer-events:none!important;
+    flex-shrink:0;
+  }
+  .keyboard-floating-field{
+    box-sizing:border-box!important;
+    z-index:10050!important;
+    box-shadow:0 10px 30px rgba(0,0,0,.18)!important;
+    transition:top 120ms ease-out,left 120ms ease-out,width 120ms ease-out!important;
+    -webkit-transform:translateZ(0)!important;
+    transform:translateZ(0)!important;
+  }
+  .keyboard-float-host{
+    transform:none!important;
+    filter:none!important;
+    -webkit-backdrop-filter:none!important;
+    backdrop-filter:none!important;
+  }
 
   ::-webkit-scrollbar{ display:none; }
 
@@ -810,6 +831,6 @@
 <script src="vendor-chartjs.js"></script>
 
 <script src="firebase-config.js"></script>
-<script src="app.js?v=38"></script>
+<script src="app.js?v=39"></script>
 </body>
 </html>
