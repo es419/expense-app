@@ -788,9 +788,9 @@ document.getElementById("cat-delete").addEventListener("click", async () => {
 
 
 // ============================================================
-// NATIVE-STYLE MOBILE KEYBOARD EDITOR
-// Keeps the app/modal in place and floats only the active text field above
-// the iOS software keyboard. Enter/Done closes the keyboard.
+// NATIVE-STYLE MOBILE KEYBOARD EDITOR — EXPENSE MODALS
+// Scoped only to the currently open modal. The modal/background stay fixed;
+// only the active text/number field is detached above the iOS keyboard.
 // ============================================================
 function installFloatingKeyboardEditor() {
   const vv = window.visualViewport;
@@ -804,6 +804,8 @@ function installFloatingKeyboardEditor() {
 
   const isTextEditor = (el) => {
     if (!el || !(el instanceof HTMLElement)) return false;
+    const modal = el.closest(".modal-backdrop.open .modal");
+    if (!modal) return false;
     if (el.tagName === "TEXTAREA") return true;
     if (el.tagName !== "INPUT") return false;
     return !excluded.has((el.getAttribute("type") || "text").toLowerCase());
@@ -813,19 +815,52 @@ function installFloatingKeyboardEditor() {
 
   const restore = () => {
     if (!active) return;
-    const { field, placeholder, style, className, hosts } = active;
-    field.className = className;
+    const { field, placeholder, style, modal } = active;
+    field.removeAttribute("data-keyboard-floating");
     if (style) field.setAttribute("style", style);
     else field.removeAttribute("style");
     placeholder.remove();
-    hosts.forEach(host => host.classList.remove("keyboard-float-host"));
+    modal.classList.remove("keyboard-editor-open");
     active = null;
-    document.documentElement.classList.remove("keyboard-editor-active");
   };
 
-  const positionField = (preFocus = false) => {
+  const snapshot = (field) => {
+    const modal = field.closest(".modal");
+    if (!modal) return false;
+
+    const rect = field.getBoundingClientRect();
+    const cs = getComputedStyle(field);
+    const placeholder = document.createElement("span");
+    placeholder.className = "keyboard-field-placeholder";
+    placeholder.style.display = cs.display === "inline" ? "inline-block" : cs.display;
+    placeholder.style.width = rect.width + "px";
+    placeholder.style.height = rect.height + "px";
+    placeholder.style.marginTop = cs.marginTop;
+    placeholder.style.marginRight = cs.marginRight;
+    placeholder.style.marginBottom = cs.marginBottom;
+    placeholder.style.marginLeft = cs.marginLeft;
+    placeholder.style.flex = cs.flex;
+    placeholder.style.alignSelf = cs.alignSelf;
+    field.parentNode && field.parentNode.insertBefore(placeholder, field);
+
+    active = {
+      field,
+      placeholder,
+      style: field.getAttribute("style") || "",
+      modal,
+      rect,
+      scrollTop: modal.scrollTop
+    };
+    modal.classList.add("keyboard-editor-open");
+    field.setAttribute("data-keyboard-floating", "true");
+    return true;
+  };
+
+  const position = (preFocus = false) => {
     if (!active) return;
-    const { field, rect } = active;
+    const { field, modal, rect, scrollTop } = active;
+    modal.scrollTop = scrollTop;
+
     const width = Math.min(rect.width || window.innerWidth - 28, window.innerWidth - 28);
     const left = Math.max(14, Math.min(rect.left, window.innerWidth - width - 14));
     const height = Math.max(44, rect.height);
@@ -851,80 +886,49 @@ function installFloatingKeyboardEditor() {
     set("z-index", "10050");
   };
 
-  const floatField = (field, preFocus = false) => {
+  const float = (field, preFocus = false) => {
     if (active && active.field !== field) restore();
-
-    if (!active) {
-      const rect = field.getBoundingClientRect();
-      const cs = getComputedStyle(field);
-      const placeholder = document.createElement("span");
-      placeholder.className = "keyboard-field-placeholder";
-      placeholder.style.display = cs.display === "inline" ? "inline-block" : cs.display;
-      placeholder.style.width = rect.width + "px";
-      placeholder.style.height = rect.height + "px";
-      placeholder.style.margin = cs.margin;
-      placeholder.style.flex = cs.flex;
-      placeholder.style.alignSelf = cs.alignSelf;
-      field.parentNode && field.parentNode.insertBefore(placeholder, field);
-
-      const hosts = [];
-      let parent = field.parentElement;
-      while (parent && parent !== document.body && parent !== document.documentElement) {
-        const pcs = getComputedStyle(parent);
-        const backdrop = pcs.getPropertyValue("backdrop-filter") || pcs.getPropertyValue("-webkit-backdrop-filter");
-        if (pcs.transform !== "none" || pcs.filter !== "none" || (backdrop && backdrop !== "none")) {
-          parent.classList.add("keyboard-float-host");
-          hosts.push(parent);
-        }
-        parent = parent.parentElement;
-      }
-
-      active = {
-        field,
-        placeholder,
-        style: field.getAttribute("style") || "",
-        className: field.className,
-        rect,
-        hosts
-      };
-      document.documentElement.classList.add("keyboard-editor-active");
-      field.classList.add("keyboard-floating-field");
-    }
-
-    positionField(preFocus);
+    if (!active && !snapshot(field)) return;
+    position(preFocus);
   };
 
   const settle = () => {
     clearTimeout(settleTimer);
     settleTimer = setTimeout(() => {
-      if (keyboardIsOpen() && isTextEditor(document.activeElement)) {
-        floatField(document.activeElement);
-      } else if (!keyboardIsOpen() && (!active || document.activeElement !== active.field)) {
-        restore();
-      }
+      const field = document.activeElement;
+      if (keyboardIsOpen() && isTextEditor(field)) float(field);
+      else if (!keyboardIsOpen() && !isTextEditor(field)) restore();
     }, 30);
   };
 
-  document.addEventListener("pointerdown", (event) => {
-    const field = event.target;
-    if (!isTextEditor(field) || field.disabled || field.readOnly) return;
-    if (document.activeElement === field) return;
-
+  const activate = (field, event) => {
+    if (field.disabled || field.readOnly || document.activeElement === field) return;
     event.preventDefault();
-    floatField(field, true);
-
+    float(field, true);
     try { field.focus({ preventScroll: true }); }
     catch { field.focus(); }
-
     try {
       const end = typeof field.value === "string" ? field.value.length : 0;
       if (field.setSelectionRange) field.setSelectionRange(end, end);
     } catch {}
+  };
+
+  // On iOS touchstart + preventDefault reliably cancels the synthetic click
+  // that otherwise lands after the field has moved and immediately blurs it.
+  document.addEventListener("touchstart", (event) => {
+    const field = event.target;
+    if (isTextEditor(field)) activate(field, event);
+  }, { capture: true, passive: false });
+
+  document.addEventListener("pointerdown", (event) => {
+    if (event.pointerType === "touch") return;
+    const field = event.target;
+    if (isTextEditor(field)) activate(field, event);
   }, true);
 
   document.addEventListener("focusin", (event) => {
     if (!isTextEditor(event.target)) return;
-    if (!active || active.field !== event.target) floatField(event.target, true);
+    if (!active || active.field !== event.target) float(event.target, true);
     settle();
   });
 
@@ -943,17 +947,13 @@ function installFloatingKeyboardEditor() {
   });
 
   const onViewportChange = () => {
-    if (!keyboardIsOpen() && !isTextEditor(document.activeElement)) {
+    if (!keyboardIsOpen() && document.activeElement === document.body) {
       baselineHeight = Math.max(baselineHeight, vv.height);
     }
     settle();
   };
   vv.addEventListener("resize", onViewportChange);
   vv.addEventListener("scroll", onViewportChange);
-
-  document.querySelectorAll("input,textarea").forEach((el) => {
-    if (isTextEditor(el) && !el.hasAttribute("enterkeyhint")) el.setAttribute("enterkeyhint", "done");
-  });
 }
 
 installFloatingKeyboardEditor();
@@ -962,9 +962,52 @@ installFloatingKeyboardEditor();
 // MODAL HELPERS
 // ============================================================
 let activeModal = null;
+let modalBodyLock = null;
+
+function lockDocumentBehindModal() {
+  if (modalBodyLock) return;
+  const body = document.body;
+  const html = document.documentElement;
+  const scrollX = window.scrollX;
+  const scrollY = window.scrollY;
+  modalBodyLock = {
+    scrollX, scrollY,
+    bodyPosition: body.style.position,
+    bodyTop: body.style.top,
+    bodyLeft: body.style.left,
+    bodyRight: body.style.right,
+    bodyWidth: body.style.width,
+    bodyOverflow: body.style.overflow,
+    htmlOverflow: html.style.overflow,
+  };
+  body.style.position = "fixed";
+  body.style.top = "-" + scrollY + "px";
+  body.style.left = "-" + scrollX + "px";
+  body.style.right = "0";
+  body.style.width = "100%";
+  body.style.overflow = "hidden";
+  html.style.overflow = "hidden";
+}
+
+function unlockDocumentBehindModal() {
+  if (!modalBodyLock) return;
+  const body = document.body;
+  const html = document.documentElement;
+  const state = modalBodyLock;
+  body.style.position = state.bodyPosition;
+  body.style.top = state.bodyTop;
+  body.style.left = state.bodyLeft;
+  body.style.right = state.bodyRight;
+  body.style.width = state.bodyWidth;
+  body.style.overflow = state.bodyOverflow;
+  html.style.overflow = state.htmlOverflow;
+  modalBodyLock = null;
+  window.scrollTo(state.scrollX, state.scrollY);
+}
 
 function openModal(el) {
   activeModal = el;
+  lockDocumentBehindModal();
   el.classList.add("open");
 }
 
@@ -974,6 +1017,7 @@ function closeModal(el) {
   }
   el.classList.remove("open");
   if (activeModal === el) activeModal = null;
+  unlockDocumentBehindModal();
 }
 
 // The document itself never scrolls or rubber-bands. Only explicit internal
