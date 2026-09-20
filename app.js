@@ -801,6 +801,9 @@ function installFloatingKeyboardEditor() {
   let baselineHeight = Math.max(vv.height, window.innerHeight);
   let active = null;
   let settleTimer = 0;
+  let suppressClickFor = null;
+  let suppressClickUntil = 0;
+  let focusStartedAt = 0;
 
   const isTextEditor = (el) => {
     if (!el || !(el instanceof HTMLElement)) return false;
@@ -911,6 +914,9 @@ function installFloatingKeyboardEditor() {
     if (document.activeElement === field) return;
 
     event.preventDefault();
+    suppressClickFor = field;
+    suppressClickUntil = performance.now() + 700;
+    focusStartedAt = performance.now();
     floatField(field, true);
 
     try { field.focus({ preventScroll: true }); }
@@ -931,9 +937,28 @@ function installFloatingKeyboardEditor() {
   document.addEventListener("focusout", (event) => {
     if (!isTextEditor(event.target)) return;
     setTimeout(() => {
+      const justStarted = performance.now() - focusStartedAt < 450;
+      if (justStarted && active && active.field === event.target) {
+        try {
+          active.field.focus({ preventScroll: true });
+          return;
+        } catch {}
+      }
       if (!isTextEditor(document.activeElement)) restore();
-    }, 0);
+    }, 60);
   });
+
+  document.addEventListener("click", (event) => {
+    if (!suppressClickFor || performance.now() > suppressClickUntil) {
+      suppressClickFor = null;
+      return;
+    }
+    if (event.target === suppressClickFor) {
+      event.preventDefault();
+      event.stopPropagation();
+      suppressClickFor = null;
+    }
+  }, true);
 
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" || (event.key === "Enter" && isTextEditor(event.target))) {
