@@ -272,6 +272,11 @@
     transform:translateY(16px); transition:transform .25s ease;
   }
   .modal-backdrop.open .modal{ transform:translateY(0); }
+  .modal.keyboard-editor-open{
+    transform:none!important;
+    transition:none!important;
+    will-change:auto;
+  }
   .modal-handle{ width:38px; height:4px; background:var(--line); border-radius:3px; margin:6px auto 14px; }
   .modal h3{ font-size:18px; margin:0 0 16px; }
   .modal-actions{ display:flex; gap:10px; margin-top:6px; }
@@ -308,7 +313,7 @@
     pointer-events:none!important;
     flex-shrink:0;
   }
-  .keyboard-floating-field{
+  [data-keyboard-floating="true"]{
     box-sizing:border-box!important;
     z-index:10050!important;
     box-shadow:0 10px 30px rgba(0,0,0,.18)!important;
@@ -831,6 +836,6 @@
 <script src="vendor-chartjs.js"></script>
 
 <script src="firebase-config.js"></script>
-<script src="app.js?v=39"></script>
+<script src="app.js?v=41"></script>
 </body>
 </html>
