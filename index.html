@@ -291,11 +291,20 @@
 
   textarea{ resize:none; }
 
-  /* iOS date controls can keep an intrinsic minimum width and spill outside
-     the sheet. Force the date field to obey the same inner width as the
-     regular text inputs without changing its native picker. */
+  /* iOS renders date inputs with a native intrinsic width that can ignore the
+     normal 100% field sizing. Reset the native box sizing but keep the date
+     picker behavior, then constrain both the control and its internal value. */
+  .modal .field:has(input[type="date"]){
+    width:100%;
+    max-width:100%;
+    min-width:0;
+    overflow:hidden;
+    contain:inline-size;
+  }
   .modal .field input[type="date"]{
     display:block;
+    -webkit-appearance:none;
+    appearance:none;
     width:100%;
     max-width:100%;
     min-width:0;
@@ -303,6 +312,16 @@
     max-inline-size:100%;
     min-inline-size:0;
     box-sizing:border-box;
+    margin:0;
+    position:relative;
+    left:auto;
+    right:auto;
+  }
+  .modal .field input[type="date"]::-webkit-date-and-time-value{
+    width:100%;
+    min-width:0;
+    margin:0;
+    text-align:right;
   }
 
 
