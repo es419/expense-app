@@ -72,6 +72,24 @@
   html{ background:var(--paper-raised); }
   @media (display-mode: standalone){
     html,body{ height:100vh; min-height:100vh; }
+
+    /* iOS standalone paints the translucent status-bar area in a separate
+       compositing layer. Give that safe-area its own opaque surface so page
+       content cannot bleed/blur through it. */
+    body::before{
+      content:"";
+      position:fixed;
+      z-index:10000;
+      top:0;
+      left:0;
+      right:0;
+      height:var(--safe-top);
+      background:var(--paper);
+      pointer-events:none;
+      transform:translateZ(0);
+      -webkit-backdrop-filter:none;
+      backdrop-filter:none;
+    }
   }
   body{
     margin:0;
