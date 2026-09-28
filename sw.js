@@ -1,11 +1,11 @@
 // Service worker: caches the app shell so the app opens instantly and
 // works offline. Firestore's own SDK handles data offline-sync separately.
 
-const CACHE_NAME = "expense-ledger-v38";
+const CACHE_NAME = "expense-ledger-v42";
 const APP_SHELL = [
   "./",
   "./index.html",
-  "./app.js?v=38",
+  "./app.js?v=42",
   "./firebase-config.js",
   "./manifest.json",
   "./icon-192.png",
