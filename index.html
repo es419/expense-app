@@ -794,6 +794,7 @@
         <h1>פנקס ההוצאות</h1>
       </div>
       <span class="sync-dot" id="sync-dot" title="סטטוס סנכרון"></span>
+      <span class="sync-status" id="sync-status">מסנכרן…</span>
     </div>
     <div style="display:flex; gap:8px;">
       <button class="icon-btn" id="theme-toggle-btn" title="החלפת מצב תצוגה">
@@ -847,11 +848,26 @@
         חדשה
       </span>
       </div>
-      <div class="page-scroll"><div class="card" id="category-list"></div></div>
+      <div class="page-scroll">
+        <div class="card budget-alert-card">
+          <input type="checkbox" id="budget-alert-enabled" aria-label="הפעלת התראות תקציב">
+          <div class="budget-alert-copy">
+            <div class="budget-alert-title">התראות תקציב</div>
+            <div class="budget-alert-sub">התרעה כשקטגוריה מגיעה לסף שבחרת</div>
+          </div>
+          <select id="budget-alert-threshold" aria-label="סף התראת תקציב">
+            <option value="80">80%</option>
+            <option value="90">90%</option>
+            <option value="100">100%</option>
+          </select>
+        </div>
+        <div class="card" id="category-list"></div>
+      </div>
     </section>
 
     <section class="app-page" id="page-insights" data-page="insights">
-      <div class="page-heading"><div><h2>תובנות</h2><div class="page-subtitle">פילוח והתקדמות מול התקציב</div></div></div>
+      <div class="page-heading"><div><h2>תובנות</h2><div class="page-subtitle">פילוח, השוואה והתקדמות מול התקציב</div></div></div>
+    <div class="card comparison-card" id="month-comparison"></div>
     <div class="chart-tabs">
       <div class="chart-tab active" data-chart="pie">פילוח הוצאות</div>
       <div class="chart-tab" data-chart="bar">תקציב מול בפועל</div>
@@ -864,7 +880,14 @@
     </section>
 
     <section class="app-page" id="page-expenses" data-page="expenses">
-      <div class="page-heading"><div><h2>הוצאות</h2><div class="page-subtitle">כל ההוצאות של החודש הנבחר</div></div></div>
+      <div class="page-heading">
+        <div><h2>הוצאות</h2><div class="page-subtitle">לחיצה על הוצאה מאפשרת לערוך אותה</div></div>
+        <span class="action" id="recurring-btn">קבועות</span>
+      </div>
+      <div class="expense-tools">
+        <input class="expense-search" id="expense-search" type="search" placeholder="חיפוש בהוצאות…" autocomplete="off">
+        <button class="filter-btn" id="expense-filter-btn">סינון <span class="filter-count"></span></button>
+      </div>
       <div class="page-scroll"><div class="card" id="expense-list"></div></div>
     </section>
   </main>
@@ -890,11 +913,11 @@
 
 </div>
 
-<!-- Add expense modal -->
+<!-- Add / edit expense modal -->
 <div class="modal-backdrop" id="expense-modal">
   <div class="modal">
     <div class="modal-handle"></div>
-    <h3>הוצאה חדשה</h3>
+    <h3 id="exp-modal-title">הוצאה חדשה</h3>
     <div class="top-amount-wrap">
       <span class="cur-sym">₪</span>
       <input type="number" inputmode="decimal" class="top-amount-input" id="exp-amount" placeholder="0" min="0" step="0.1">
@@ -915,9 +938,107 @@
       <label>הערה (לא חובה)</label>
       <input type="text" id="exp-note" placeholder="לדוגמה: קניות בסופר" maxlength="80">
     </div>
+    <div class="field">
+      <label class="checkbox-row">
+        <input type="checkbox" id="exp-recurring">
+        <span class="checkbox-copy">
+          <span class="checkbox-title">הוצאה קבועה חודשית</span>
+          <span class="checkbox-hint" id="exp-recurring-hint">יצור כלל חודשי חדש לפי הסכום, הקטגוריה והיום שבחרת.</span>
+        </span>
+      </label>
+    </div>
     <div class="modal-actions">
       <button class="btn btn-ghost" id="exp-cancel" style="flex:1">ביטול</button>
       <button class="btn btn-primary" id="exp-save" style="flex:2">שמירת הוצאה</button>
+    </div>
+  </div>
+</div>
+
+<!-- Expense filters -->
+<div class="modal-backdrop" id="expense-filter-modal">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <h3>סינון הוצאות</h3>
+    <div class="field">
+      <label>קטגוריה</label>
+      <select id="filter-category"><option value="all">כל הקטגוריות</option></select>
+    </div>
+    <div class="field">
+      <label>אמצעי תשלום</label>
+      <select id="filter-payment">
+        <option value="all">הכל</option>
+        <option value="credit">אשראי</option>
+        <option value="cash">מזומן</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>מתאריך</label>
+      <input type="date" id="filter-from">
+    </div>
+    <div class="field">
+      <label>עד תאריך</label>
+      <input type="date" id="filter-to">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-danger-text" id="filter-clear" style="flex:1">ניקוי</button>
+      <button class="btn btn-ghost" id="filter-cancel" style="flex:1">ביטול</button>
+      <button class="btn btn-primary" id="filter-apply" style="flex:2">החלה</button>
+    </div>
+  </div>
+</div>
+
+<!-- Recurring expenses -->
+<div class="modal-backdrop" id="recurring-modal">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <h3>הוצאות קבועות</h3>
+    <div class="recurring-list" id="recurring-list"></div>
+    <div class="modal-actions">
+      <button class="btn btn-primary" id="recurring-close">סגירה</button>
+    </div>
+  </div>
+</div>
+
+<!-- Recurring expense editor -->
+<div class="modal-backdrop" id="recurring-rule-modal">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <h3>עריכת הוצאה קבועה</h3>
+    <div class="field">
+      <label>סכום</label>
+      <input type="number" inputmode="decimal" id="rec-rule-amount" min="0" step="0.1">
+    </div>
+    <div class="field">
+      <label>קטגוריה</label>
+      <select id="rec-rule-category"></select>
+    </div>
+    <div class="field">
+      <label>אמצעי תשלום</label>
+      <select id="rec-rule-payment">
+        <option value="credit">אשראי</option>
+        <option value="cash">מזומן</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>יום בחודש</label>
+      <input type="number" inputmode="numeric" id="rec-rule-day" min="1" max="31">
+    </div>
+    <div class="field">
+      <label>הערה</label>
+      <input type="text" id="rec-rule-note" maxlength="80">
+    </div>
+    <div class="field">
+      <label class="checkbox-row">
+        <input type="checkbox" id="rec-rule-active">
+        <span class="checkbox-copy">
+          <span class="checkbox-title">פעילה</span>
+          <span class="checkbox-hint">כשכבויה לא ייווצרו הוצאות חדשות.</span>
+        </span>
+      </label>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="rec-rule-cancel" style="flex:1">ביטול</button>
+      <button class="btn btn-primary" id="rec-rule-save" style="flex:2">שמירה</button>
     </div>
   </div>
 </div>
@@ -947,7 +1068,10 @@
   </div>
 </div>
 
-<div class="toast" id="toast"></div>
+<div class="toast" id="toast">
+  <span id="toast-message"></span>
+  <button class="toast-action hidden" id="toast-action"></button>
+</div>
 
 <!-- Firebase (compat SDK, simple <script> usage, no bundler needed) -->
 <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
@@ -957,6 +1081,6 @@
 <script src="vendor-chartjs.js"></script>
 
 <script src="firebase-config.js"></script>
-<script src="app.js?v=42"></script>
+<script src="app.js?v=43"></script>
 </body>
 </html>
