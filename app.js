@@ -851,18 +851,81 @@ function renderPaymentChart(ctx, legend, monthExpenses) {
   `;
 }
 
-// ---------- Expense list ----------
+// ---------- Expense list / search / filters ----------
+function renderExpenseFilterControls() {
+  const search = document.getElementById("expense-search");
+  const button = document.getElementById("expense-filter-btn");
+  const categorySelect = document.getElementById("filter-category");
+  if (!search || !button || !categorySelect) return;
+
+  if (document.activeElement !== search) search.value = expenseFilters.search;
+
+  const currentValue = expenseFilters.category;
+  categorySelect.innerHTML = '<option value="all">כל הקטגוריות</option>' +
+    state.categories.map(c => '<option value="' + c.id + '">' + escapeHtml(c.name) + '</option>').join("");
+  categorySelect.value = state.categories.some(c => c.id === currentValue) ? currentValue : "all";
+
+  const activeCount = [
+    expenseFilters.category !== "all",
+    expenseFilters.payment !== "all",
+    !!expenseFilters.from,
+    !!expenseFilters.to
+  ].filter(Boolean).length;
+  button.classList.toggle("active", activeCount > 0);
+  const count = button.querySelector(".filter-count");
+  if (count) count.textContent = activeCount ? String(activeCount) : "";
+}
+
+document.getElementById("expense-search").addEventListener("input", (event) => {
+  expenseFilters.search = event.target.value;
+  renderExpenseList();
+});
+
+const filterModal = document.getElementById("expense-filter-modal");
+document.getElementById("expense-filter-btn").addEventListener("click", () => {
+  renderExpenseFilterControls();
+  document.getElementById("filter-category").value = expenseFilters.category;
+  document.getElementById("filter-payment").value = expenseFilters.payment;
+  document.getElementById("filter-from").value = expenseFilters.from;
+  document.getElementById("filter-to").value = expenseFilters.to;
+  openModal(filterModal);
+});
+document.getElementById("filter-cancel").addEventListener("click", () => closeModal(filterModal));
+filterModal.addEventListener("click", (e) => { if (e.target === filterModal) closeModal(filterModal); });
+
+document.getElementById("filter-apply").addEventListener("click", () => {
+  expenseFilters.category = document.getElementById("filter-category").value;
+  expenseFilters.payment = document.getElementById("filter-payment").value;
+  expenseFilters.from = document.getElementById("filter-from").value;
+  expenseFilters.to = document.getElementById("filter-to").value;
+  closeModal(filterModal);
+  renderExpenseFilterControls();
+  renderExpenseList();
+});
+
+document.getElementById("filter-clear").addEventListener("click", () => {
+  expenseFilters.category = "all";
+  expenseFilters.payment = "all";
+  expenseFilters.from = "";
+  expenseFilters.to = "";
+  document.getElementById("filter-category").value = "all";
+  document.getElementById("filter-payment").value = "all";
+  document.getElementById("filter-from").value = "";
+  document.getElementById("filter-to").value = "";
+});
+
 function renderExpenseList() {
   const wrap = document.getElementById("expense-list");
-  const monthExpenses = expensesForCurrentMonth();
+  const allMonthExpenses = expensesForCurrentMonth();
+  const monthExpenses = filteredExpensesForCurrentMonth();
 
   if (monthExpenses.length === 0) {
-    wrap.innerHTML = `<div class="empty-hint">אין הוצאות בחודש זה עדיין. לחצו על "הוספת הוצאה" כדי להתחיל.</div>`;
-    
+    wrap.innerHTML = allMonthExpenses.length === 0
+      ? '<div class="empty-hint">אין הוצאות בחודש זה עדיין. לחצו על הפלוס כדי להתחיל.</div>'
+      : '<div class="empty-hint">לא נמצאו הוצאות שמתאימות לחיפוש או לסינון.</div>';
     return;
   }
 
-  // group by day
   const groups = {};
   monthExpenses.forEach(e => {
     groups[e.date] = groups[e.date] || [];
@@ -872,46 +935,107 @@ function renderExpenseList() {
 
   let html = "";
   sortedDates.forEach(date => {
-    html += `<div class="exp-day-label">${formatDayLabel(date)}</div>`;
+    html += '<div class="exp-day-label">' + formatDayLabel(date) + '</div>';
     groups[date].forEach(e => {
       const cat = catById(e.categoryId);
-      html += `
-        <div class="exp-row">
-          <div class="exp-dot" style="background:${cat.color}">${cat.name.charAt(0)}</div>
-          <div class="exp-mid">
-            <div class="exp-cat">${escapeHtml(cat.name)}</div>
-            <div class="exp-meta-row">
-              <span class="pay-tag ${e.paymentMethod === 'cash' ? 'cash' : 'credit'}">${paymentName(e.paymentMethod)}</span>
-              ${e.note ? `<div class="exp-note">${escapeHtml(e.note)}</div>` : ""}
-            </div>
-          </div>
-          <div class="exp-amount num">${fmtNum(e.amount)} ₪</div>
-          <button class="exp-del" data-id="${e.id}" title="מחיקה">
-            <svg viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-          </button>
-        </div>`;
+      html +=
+        '<div class="exp-row exp-editable" data-exp-id="' + e.id + '">' +
+          '<div class="exp-dot" style="background:' + cat.color + '">' + escapeHtml(cat.name.charAt(0)) + '</div>' +
+          '<div class="exp-mid">' +
+            '<div class="exp-cat">' + escapeHtml(cat.name) + '</div>' +
+            '<div class="exp-meta-row">' +
+              '<span class="pay-tag ' + (e.paymentMethod === "cash" ? "cash" : "credit") + '">' + paymentName(e.paymentMethod) + '</span>' +
+              (e.recurringId ? '<span class="recurring-tag">קבועה</span>' : '') +
+              (e.note ? '<div class="exp-note">' + escapeHtml(e.note) + '</div>' : '') +
+            '</div>' +
+          '</div>' +
+          '<div class="exp-amount num">' + fmtNum(e.amount) + ' ₪</div>' +
+          '<button class="exp-del" data-id="' + e.id + '" title="מחיקה" aria-label="מחיקת הוצאה">' +
+            '<svg viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>' +
+          '</button>' +
+        '</div>';
     });
   });
   wrap.innerHTML = html;
 
-  wrap.querySelectorAll(".exp-del").forEach(btn => {
-    btn.addEventListener("click", () => deleteExpense(btn.dataset.id));
+  wrap.querySelectorAll(".exp-row[data-exp-id]").forEach(row => {
+    row.addEventListener("click", (event) => {
+      if (event.target.closest(".exp-del")) return;
+      openExpenseModal(row.dataset.expId);
+    });
   });
 
-  
+  wrap.querySelectorAll(".exp-del").forEach(btn => {
+    btn.addEventListener("click", (event) => {
+      event.stopPropagation();
+      deleteExpense(btn.dataset.id);
+    });
+  });
 }
 
 function formatDayLabel(dateStr) {
-  const [y, m, d] = dateStr.split("-").map(Number);
+  const parts = dateStr.split("-").map(Number);
+  const y = parts[0], m = parts[1], d = parts[2];
   const date = new Date(y, m - 1, d);
   const days = ["ראשון","שני","שלישי","רביעי","חמישי","שישי","שבת"];
-  return `יום ${days[date.getDay()]}, ${d} ב${HEBREW_MONTHS[m-1]}`;
+  return "יום " + days[date.getDay()] + ", " + d + " ב" + HEBREW_MONTHS[m-1];
 }
 
-async function deleteExpense(id) {
-  if (!state.user) return;
-  await db.collection("users").doc(state.user.uid).collection("expenses").doc(id).delete();
-  showToast("ההוצאה נמחקה");
+function deleteExpense(id) {
+  if (!state.user || pendingDeletedExpenseIds.has(id)) return;
+  const expense = state.expenses.find(e => e.id === id);
+  if (!expense) return;
+
+  pendingDeletedExpenseIds.add(id);
+  pendingDeleteItems.set(id, { ...expense });
+  renderAll();
+
+  const timer = setTimeout(() => commitExpenseDelete(id), 5000);
+  pendingDeleteTimers.set(id, timer);
+  showUndoToast("ההוצאה נמחקה", () => undoExpenseDelete(id));
+}
+
+function undoExpenseDelete(id) {
+  const timer = pendingDeleteTimers.get(id);
+  if (timer) clearTimeout(timer);
+  pendingDeleteTimers.delete(id);
+  pendingDeletedExpenseIds.delete(id);
+  pendingDeleteItems.delete(id);
+  renderAll();
+}
+
+function commitExpenseDelete(id) {
+  if (!state.user || !pendingDeletedExpenseIds.has(id)) return;
+  const expense = pendingDeleteItems.get(id);
+  pendingDeleteTimers.delete(id);
+
+  try {
+    const batch = db.batch();
+    const expenseRef = db.collection("users").doc(state.user.uid).collection("expenses").doc(id);
+    batch.delete(expenseRef);
+
+    if (expense && expense.recurringId && expense.recurringMonth) {
+      const recurringRef = db.collection("users").doc(state.user.uid)
+        .collection("recurringExpenses").doc(expense.recurringId);
+      batch.set(recurringRef, {
+        skippedMonths: firebase.firestore.FieldValue.arrayUnion(expense.recurringMonth)
+      }, { merge: true });
+    }
+
+    batch.commit().catch((err) => {
+      console.error("Expense delete failed:", err);
+      pendingDeletedExpenseIds.delete(id);
+      pendingDeleteItems.delete(id);
+      renderAll();
+      showToast("מחיקת ההוצאה נכשלה");
+    });
+  } catch (err) {
+    console.error("Expense delete failed:", err);
+    pendingDeletedExpenseIds.delete(id);
+    pendingDeleteItems.delete(id);
+    renderAll();
+    showToast("מחיקת ההוצאה נכשלה");
+  }
 }
 
 // ============================================================
