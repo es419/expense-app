@@ -613,6 +613,130 @@ function escapeHtml(s) {
   return d.innerHTML;
 }
 
+// ---------- Month comparison ----------
+function renderMonthComparison() {
+  const wrap = document.getElementById("month-comparison");
+  if (!wrap) return;
+
+  let prevMonth = state.currentMonth - 1;
+  let prevYear = state.currentYear;
+  if (prevMonth < 0) { prevMonth = 11; prevYear--; }
+
+  const current = expensesForCurrentMonth();
+  const previous = expensesForMonth(prevYear, prevMonth);
+  const currentTotal = current.reduce((sum, e) => sum + Number(e.amount || 0), 0);
+  const previousTotal = previous.reduce((sum, e) => sum + Number(e.amount || 0), 0);
+  const delta = currentTotal - previousTotal;
+  const pct = previousTotal > 0 ? Math.round((delta / previousTotal) * 100) : null;
+  const direction = delta > 0 ? "up" : delta < 0 ? "down" : "same";
+
+  const currentByCat = {};
+  const previousByCat = {};
+  current.forEach(e => { currentByCat[e.categoryId] = (currentByCat[e.categoryId] || 0) + Number(e.amount || 0); });
+  previous.forEach(e => { previousByCat[e.categoryId] = (previousByCat[e.categoryId] || 0) + Number(e.amount || 0); });
+
+  const categoryDiffs = state.categories
+    .map(cat => ({
+      cat,
+      diff: (currentByCat[cat.id] || 0) - (previousByCat[cat.id] || 0),
+      hasData: (currentByCat[cat.id] || 0) > 0 || (previousByCat[cat.id] || 0) > 0
+    }))
+    .filter(item => item.hasData)
+    .sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff));
+
+  const comparisonText = pct === null
+    ? (currentTotal === 0 ? "אין עדיין נתונים להשוואה" : "בחודש הקודם לא היו הוצאות")
+    : (pct > 0 ? "+" : "") + pct + "% לעומת החודש הקודם";
+
+  let chips = categoryDiffs.map(({ cat, diff }) =>
+    '<span class="comparison-chip">' +
+      '<span class="cat-dot" style="background:' + cat.color + '"></span>' +
+      escapeHtml(cat.name) +
+      '<b class="num">' + (diff > 0 ? "+" : "") + fmtNum(diff) + ' ₪</b>' +
+    '</span>'
+  ).join("");
+  if (!chips) chips = '<span class="comparison-empty">אין שינויי קטגוריות להצגה</span>';
+
+  wrap.innerHTML =
+    '<div class="comparison-top">' +
+      '<div><div class="comparison-label">לעומת ' + HEBREW_MONTHS[prevMonth] + '</div>' +
+      '<div class="comparison-value num">' + fmtNum(currentTotal) + ' ₪</div></div>' +
+      '<div class="comparison-change ' + direction + '">' + comparisonText + '</div>' +
+    '</div>' +
+    '<div class="comparison-categories">' + chips + '</div>';
+}
+
+// ---------- Optional budget alerts ----------
+function budgetAlertsEnabled() {
+  return localStorage.getItem("budget-alerts-enabled") === "1";
+}
+function budgetAlertThreshold() {
+  return Number(localStorage.getItem("budget-alert-threshold") || "80");
+}
+function renderBudgetAlertSettings() {
+  const enabled = document.getElementById("budget-alert-enabled");
+  const threshold = document.getElementById("budget-alert-threshold");
+  if (!enabled || !threshold) return;
+  enabled.checked = budgetAlertsEnabled();
+  threshold.value = String(budgetAlertThreshold());
+  threshold.disabled = !enabled.checked;
+}
+
+document.getElementById("budget-alert-enabled").addEventListener("change", async (event) => {
+  localStorage.setItem("budget-alerts-enabled", event.target.checked ? "1" : "0");
+  document.getElementById("budget-alert-threshold").disabled = !event.target.checked;
+  if (event.target.checked && "Notification" in window && Notification.permission === "default") {
+    try { await Notification.requestPermission(); } catch {}
+  }
+  checkBudgetAlerts();
+});
+
+document.getElementById("budget-alert-threshold").addEventListener("change", (event) => {
+  localStorage.setItem("budget-alert-threshold", event.target.value);
+  checkBudgetAlerts();
+});
+
+function checkBudgetAlerts() {
+  if (!budgetAlertsEnabled()) return;
+  const now = new Date();
+  if (state.currentYear !== now.getFullYear() || state.currentMonth !== now.getMonth()) return;
+
+  const threshold = budgetAlertThreshold();
+  const key = monthKey(state.currentYear, state.currentMonth);
+  const spent = {};
+  expensesForCurrentMonth().forEach(e => {
+    spent[e.categoryId] = (spent[e.categoryId] || 0) + Number(e.amount || 0);
+  });
+
+  const newlyCrossed = [];
+  state.categories.forEach(cat => {
+    const budget = Number(cat.budget || 0);
+    if (budget <= 0) return;
+    const pct = Math.round(((spent[cat.id] || 0) / budget) * 100);
+    if (pct < threshold) return;
+    const alertMarker = "budget-alert:" + key + ":" + cat.id + ":" + threshold;
+    if (localStorage.getItem(alertMarker)) return;
+    localStorage.setItem(alertMarker, "1");
+    newlyCrossed.push({ cat, pct });
+  });
+
+  if (!newlyCrossed.length) return;
+  newlyCrossed.sort((a, b) => b.pct - a.pct);
+  const item = newlyCrossed[0];
+  setTimeout(() => showToast(item.cat.name + ": הגעת ל-" + item.pct + "% מהתקציב"), 450);
+
+  if ("Notification" in window && Notification.permission === "granted" && navigator.serviceWorker) {
+    navigator.serviceWorker.ready.then(reg => {
+      reg.showNotification("התראת תקציב", {
+        body: item.cat.name + ": הגעת ל-" + item.pct + "% מהתקציב החודשי",
+        icon: "icon-192.png",
+        badge: "icon-192.png",
+        tag: "budget-" + key + "-" + item.cat.id
+      });
+    }).catch(() => {});
+  }
+}
+
 // ---------- Charts ----------
 document.querySelectorAll(".chart-tab").forEach(tab => {
   tab.addEventListener("click", () => {
