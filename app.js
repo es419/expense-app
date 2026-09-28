@@ -89,22 +89,32 @@ const PAYMENT_METHODS = [
 // ---------- State ----------
 let state = {
   user: null,
-  categories: [],       // [{id, name, color, budget}]
-  expenses: [],         // all expenses loaded for current user (we keep full list, filter client-side by month)
+  categories: [],
+  expenses: [],
+  recurringExpenses: [],
   currentMonth: new Date().getMonth(),
   currentYear: new Date().getFullYear(),
   chartMode: "pie",
   currentPage: "home",
   editingCategoryId: null,
+  editingExpenseId: null,
   unsubExpenses: null,
   unsubCategories: null,
+  unsubRecurring: null,
   categoriesLoaded: false,
   expensesLoaded: false,
+  recurringLoaded: false,
   pendingExpenseWrites: false,
   pendingCategoryWrites: false,
+  pendingRecurringWrites: false,
 };
 
 let chartInstance = null;
+const pendingDeletedExpenseIds = new Set();
+const pendingDeleteItems = new Map();
+const pendingDeleteTimers = new Map();
+const recurringEnsuredIds = new Set();
+const expenseFilters = { search: "", category: "all", payment: "all", from: "", to: "" };
 
 // ---------- Helpers ----------
 function fmtNum(n) {
@@ -117,34 +127,97 @@ function todayISO() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
 }
-function showToast(msg) {
+function showToast(msg, options = {}) {
   const t = document.getElementById("toast");
-  t.textContent = msg;
+  const message = document.getElementById("toast-message");
+  const action = document.getElementById("toast-action");
+  message.textContent = msg;
+  action.classList.add("hidden");
+  action.onclick = null;
+
+  if (options.actionLabel && typeof options.action === "function") {
+    action.textContent = options.actionLabel;
+    action.classList.remove("hidden");
+    action.onclick = () => {
+      clearTimeout(showToast._tm);
+      t.classList.remove("show");
+      options.action();
+    };
+  }
+
   t.classList.add("show");
   clearTimeout(showToast._tm);
-  showToast._tm = setTimeout(() => t.classList.remove("show"), 2200);
+  showToast._tm = setTimeout(() => t.classList.remove("show"), options.timeout || 2400);
 }
+
+function showUndoToast(msg, undo) {
+  showToast(msg, { actionLabel: "ביטול", action: undo, timeout: 5200 });
+}
+
 function setSyncDot(mode) {
   const dot = document.getElementById("sync-dot");
-  dot.classList.remove("on", "busy");
+  const label = document.getElementById("sync-status");
+  dot.classList.remove("on", "busy", "offline");
+  const labels = { on: "מסונכרן", busy: "מסנכרן…", offline: "לא מקוון" };
   if (mode === "on") dot.classList.add("on");
   if (mode === "busy") dot.classList.add("busy");
+  if (mode === "offline") dot.classList.add("offline");
+  if (label) label.textContent = labels[mode] || "";
 }
+
 function refreshSyncDot() {
-  setSyncDot(state.pendingExpenseWrites || state.pendingCategoryWrites ? "busy" : "on");
+  if (!navigator.onLine) {
+    setSyncDot("offline");
+    return;
+  }
+  setSyncDot(
+    state.pendingExpenseWrites || state.pendingCategoryWrites || state.pendingRecurringWrites
+      ? "busy"
+      : "on"
+  );
 }
+
+window.addEventListener("online", refreshSyncDot);
+window.addEventListener("offline", refreshSyncDot);
+
 function catById(id) {
   return state.categories.find(c => c.id === id) || { id: "other", name: "אחר", color: "#7A7368", budget: 0 };
 }
 function paymentName(id) {
   return (PAYMENT_METHODS.find(p => p.id === id) || PAYMENT_METHODS[0]).name;
 }
+function expensesForMonth(year, month) {
+  const key = monthKey(year, month);
+  return state.expenses.filter(e =>
+    !pendingDeletedExpenseIds.has(e.id) &&
+    e.date &&
+    e.date.startsWith(key)
+  );
+}
 function expensesForCurrentMonth() {
-  const key = monthKey(state.currentYear, state.currentMonth);
-  return state.expenses.filter(e => e.date && e.date.startsWith(key));
+  return expensesForMonth(state.currentYear, state.currentMonth);
+}
+function filteredExpensesForCurrentMonth() {
+  const search = expenseFilters.search.trim().toLowerCase();
+  return expensesForCurrentMonth().filter((expense) => {
+    const cat = catById(expense.categoryId);
+    if (expenseFilters.category !== "all" && expense.categoryId !== expenseFilters.category) return false;
+    if (expenseFilters.payment !== "all" && expense.paymentMethod !== expenseFilters.payment) return false;
+    if (expenseFilters.from && expense.date < expenseFilters.from) return false;
+    if (expenseFilters.to && expense.date > expenseFilters.to) return false;
+    if (!search) return true;
+    return [
+      expense.note || "",
+      cat.name || "",
+      paymentName(expense.paymentMethod),
+      String(expense.amount || ""),
+      expense.date || ""
+    ].some(value => value.toLowerCase().includes(search));
+  });
 }
 
 // ============================================================
+// APP NAVIGATION// ============================================================
 // APP NAVIGATION
 // ============================================================
 const APP_PAGES = new Set(["home", "categories", "insights", "expenses"]);
@@ -304,7 +377,6 @@ auth.onAuthStateChanged((user) => {
 function attachListeners(uid) {
   setSyncDot("busy");
 
-  // Categories (single doc holding array, simplest for small personal lists)
   const catDocRef = db.collection("users").doc(uid).collection("meta").doc("categories");
   state.unsubCategories = catDocRef.onSnapshot({ includeMetadataChanges: true }, async (snap) => {
     state.pendingCategoryWrites = snap.metadata.hasPendingWrites;
@@ -331,32 +403,67 @@ function attachListeners(uid) {
     showToast("שגיאת סנכרון קטגוריות");
   });
 
-  // Expenses collection, ordered by date desc
   const expRef = db.collection("users").doc(uid).collection("expenses");
   state.unsubExpenses = expRef.orderBy("date", "desc").onSnapshot({ includeMetadataChanges: true }, (snap) => {
     state.expenses = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     state.expensesLoaded = true;
     state.pendingExpenseWrites = snap.metadata.hasPendingWrites;
+
+    for (const id of [...pendingDeletedExpenseIds]) {
+      if (!state.expenses.some(e => e.id === id)) {
+        pendingDeletedExpenseIds.delete(id);
+        pendingDeleteItems.delete(id);
+        const timer = pendingDeleteTimers.get(id);
+        if (timer) clearTimeout(timer);
+        pendingDeleteTimers.delete(id);
+      }
+    }
+
     if (state.categoriesLoaded && state.expensesLoaded) hideBootLoader();
     refreshSyncDot();
     renderAll();
+    maybeEnsureRecurringCurrentMonth();
   }, (err) => {
     console.error(err);
     state.pendingExpenseWrites = false;
     setSyncDot("busy");
     showToast("שגיאת סנכרון הוצאות");
   });
+
+  const recurringRef = db.collection("users").doc(uid).collection("recurringExpenses");
+  state.unsubRecurring = recurringRef.onSnapshot({ includeMetadataChanges: true }, (snap) => {
+    state.recurringExpenses = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    state.recurringLoaded = true;
+    state.pendingRecurringWrites = snap.metadata.hasPendingWrites;
+    refreshSyncDot();
+    renderRecurringList();
+    maybeEnsureRecurringCurrentMonth();
+  }, (err) => {
+    console.error(err);
+    state.pendingRecurringWrites = false;
+    setSyncDot("busy");
+    showToast("שגיאת סנכרון הוצאות קבועות");
+  });
 }
 
 function detachListeners() {
   if (state.unsubExpenses) state.unsubExpenses();
   if (state.unsubCategories) state.unsubCategories();
+  if (state.unsubRecurring) state.unsubRecurring();
   state.expenses = [];
   state.categories = [];
+  state.recurringExpenses = [];
   state.categoriesLoaded = false;
   state.expensesLoaded = false;
+  state.recurringLoaded = false;
   state.pendingExpenseWrites = false;
   state.pendingCategoryWrites = false;
+  state.pendingRecurringWrites = false;
+  recurringEnsuredIds.clear();
+  pendingDeletedExpenseIds.clear();
+  for (const timer of pendingDeleteTimers.values()) clearTimeout(timer);
+  pendingDeleteTimers.clear();
+  pendingDeleteItems.clear();
 }
 
 function saveCategories(list = state.categories) {
@@ -366,6 +473,7 @@ function saveCategories(list = state.categories) {
 }
 
 // ============================================================
+// MONTH NAVIGATION// ============================================================
 // MONTH NAVIGATION
 // ============================================================
 document.getElementById("prev-month").addEventListener("click", () => shiftMonth(-1));
@@ -374,14 +482,17 @@ document.getElementById("goto-today").addEventListener("click", () => {
   const now = new Date();
   state.currentMonth = now.getMonth();
   state.currentYear = now.getFullYear();
+  expenseFilters.from = "";
+  expenseFilters.to = "";
   renderAll();
 });
 
 function shiftMonth(delta) {
-  // Note: UI arrows are visually mirrored for RTL reading (prev-month button on the right moves forward)
   state.currentMonth += delta;
   if (state.currentMonth > 11) { state.currentMonth = 0; state.currentYear++; }
   if (state.currentMonth < 0) { state.currentMonth = 11; state.currentYear--; }
+  expenseFilters.from = "";
+  expenseFilters.to = "";
   renderAll();
 }
 
@@ -393,8 +504,12 @@ function renderAll() {
   renderMonthLabel();
   safeRender(renderReceipt, "receipt");
   safeRender(renderCategoryList, "category-list");
+  safeRender(renderBudgetAlertSettings, "budget-alert-settings");
+  safeRender(renderMonthComparison, "month-comparison");
+  safeRender(renderExpenseFilterControls, "expense-filters");
   if (state.currentPage === "insights") safeRender(renderChart, "chart");
   safeRender(renderExpenseList, "expense-list");
+  safeRender(checkBudgetAlerts, "budget-alert-check");
 }
 
 function safeRender(fn, label) {
