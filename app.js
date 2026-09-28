@@ -1062,22 +1062,39 @@ function bindReliableModalAction(button, handler) {
 }
 
 // ============================================================
-// ADD EXPENSE MODAL
+// ADD / EDIT EXPENSE MODAL
 // ============================================================
 const expModal = document.getElementById("expense-modal");
 let selectedExpCat = null;
 let selectedExpPayment = "credit";
 
-document.getElementById("nav-add-expense").addEventListener("click", () => openExpenseModal());
+document.getElementById("nav-add-expense").addEventListener("click", () => openExpenseModal(null));
 document.getElementById("exp-cancel").addEventListener("click", () => closeModal(expModal));
 expModal.addEventListener("click", (e) => { if (e.target === expModal) closeModal(expModal); });
 
-function openExpenseModal() {
-  document.getElementById("exp-amount").value = "";
-  document.getElementById("exp-note").value = "";
-  document.getElementById("exp-date").value = todayISO();
-  selectedExpCat = state.categories[0] ? state.categories[0].id : null;
-  selectedExpPayment = "credit";
+function openExpenseModal(expenseId = null) {
+  const existing = expenseId ? state.expenses.find(e => e.id === expenseId) : null;
+  state.editingExpenseId = existing ? existing.id : null;
+
+  document.getElementById("exp-modal-title").textContent = existing ? "עריכת הוצאה" : "הוצאה חדשה";
+  document.getElementById("exp-save").textContent = existing ? "שמירת שינויים" : "שמירת הוצאה";
+  document.getElementById("exp-amount").value = existing ? existing.amount : "";
+  document.getElementById("exp-note").value = existing ? (existing.note || "") : "";
+  document.getElementById("exp-date").value = existing ? existing.date : todayISO();
+
+  selectedExpCat = existing
+    ? existing.categoryId
+    : (state.categories[0] ? state.categories[0].id : null);
+  selectedExpPayment = existing ? (existing.paymentMethod || "credit") : "credit";
+
+  const recurringCheckbox = document.getElementById("exp-recurring");
+  const recurringHint = document.getElementById("exp-recurring-hint");
+  recurringCheckbox.checked = !!(existing && existing.recurringId);
+  recurringCheckbox.disabled = !!(existing && existing.recurringId);
+  recurringHint.textContent = existing && existing.recurringId
+    ? "הוצאה זו נוצרה מכלל קבוע. את הכלל אפשר לנהל במסך ״קבועות״."
+    : "יצור כלל חודשי חדש לפי הסכום, הקטגוריה והיום שבחרת.";
+
   renderExpCatChips();
   renderExpPaymentChips();
   openModal(expModal);
@@ -1085,9 +1102,11 @@ function openExpenseModal() {
 
 function renderExpPaymentChips() {
   const wrap = document.getElementById("exp-payment-chips");
-  wrap.innerHTML = PAYMENT_METHODS.map(p => `
-    <div class="chip ${p.id === selectedExpPayment ? "active" : ""}" data-id="${p.id}">${escapeHtml(p.name)}</div>
-  `).join("");
+  wrap.innerHTML = PAYMENT_METHODS.map(p =>
+    '<div class="chip ' + (p.id === selectedExpPayment ? "active" : "") + '" data-id="' + p.id + '">' +
+      escapeHtml(p.name) +
+    '</div>'
+  ).join("");
   wrap.querySelectorAll(".chip").forEach(chip => {
     chip.addEventListener("click", () => {
       selectedExpPayment = chip.dataset.id;
@@ -1098,10 +1117,11 @@ function renderExpPaymentChips() {
 
 function renderExpCatChips() {
   const wrap = document.getElementById("exp-cat-chips");
-  wrap.innerHTML = state.categories.map(c => `
-    <div class="chip ${c.id === selectedExpCat ? "active" : ""}" data-id="${c.id}">
-      <span class="cat-dot" style="background:${c.color}"></span>${escapeHtml(c.name)}
-    </div>`).join("");
+  wrap.innerHTML = state.categories.map(c =>
+    '<div class="chip ' + (c.id === selectedExpCat ? "active" : "") + '" data-id="' + c.id + '">' +
+      '<span class="cat-dot" style="background:' + c.color + '"></span>' + escapeHtml(c.name) +
+    '</div>'
+  ).join("");
   wrap.querySelectorAll(".chip").forEach(chip => {
     chip.addEventListener("click", () => {
       selectedExpCat = chip.dataset.id;
@@ -1114,6 +1134,9 @@ function saveExpenseFromModal() {
   const amount = parseFloat(document.getElementById("exp-amount").value);
   const date = document.getElementById("exp-date").value;
   const note = document.getElementById("exp-note").value.trim();
+  const existing = state.editingExpenseId
+    ? state.expenses.find(e => e.id === state.editingExpenseId)
+    : null;
 
   if (!amount || amount <= 0) { showToast("נא להזין סכום תקין"); return; }
   if (!selectedExpCat) { showToast("נא לבחור קטגוריה"); return; }
@@ -1125,19 +1148,59 @@ function saveExpenseFromModal() {
   saveBtn.dataset.saving = "1";
   saveBtn.disabled = true;
 
+  const wantsRecurring = document.getElementById("exp-recurring").checked && !(existing && existing.recurringId);
+  let recurringId = existing && existing.recurringId ? existing.recurringId : null;
+  let recurringMonth = existing && existing.recurringMonth ? existing.recurringMonth : null;
+  let recurringPromise = null;
+
+  if (wantsRecurring) {
+    const recurringRef = db.collection("users").doc(state.user.uid).collection("recurringExpenses").doc();
+    recurringId = recurringRef.id;
+    recurringMonth = date.slice(0, 7);
+    recurringEnsuredIds.add("rec_" + recurringId + "_" + recurringMonth);
+    state.pendingRecurringWrites = true;
+    recurringPromise = recurringRef.set({
+      amount,
+      categoryId: selectedExpCat,
+      paymentMethod: selectedExpPayment,
+      note,
+      day: Number(date.slice(8, 10)),
+      startMonth: recurringMonth,
+      active: true,
+      skippedMonths: [],
+      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+  }
+
   state.pendingExpenseWrites = true;
   refreshSyncDot();
 
   let writePromise;
   try {
-    const docRef = db.collection("users").doc(state.user.uid).collection("expenses").doc();
-    writePromise = docRef.set({
-      amount, categoryId: selectedExpCat, paymentMethod: selectedExpPayment, date, note,
-      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-    });
+    const expenseRef = existing
+      ? db.collection("users").doc(state.user.uid).collection("expenses").doc(existing.id)
+      : db.collection("users").doc(state.user.uid).collection("expenses").doc();
+
+    const payload = {
+      amount,
+      categoryId: selectedExpCat,
+      paymentMethod: selectedExpPayment,
+      date,
+      note,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    };
+    if (!existing) payload.createdAt = firebase.firestore.FieldValue.serverTimestamp();
+    if (recurringId) {
+      payload.recurringId = recurringId;
+      payload.recurringMonth = recurringMonth || date.slice(0, 7);
+    }
+
+    writePromise = expenseRef.set(payload, { merge: true });
   } catch (err) {
     console.error("Expense save failed:", err);
     state.pendingExpenseWrites = false;
+    state.pendingRecurringWrites = false;
     refreshSyncDot();
     saveBtn.dataset.saving = "0";
     saveBtn.disabled = false;
@@ -1146,7 +1209,9 @@ function saveExpenseFromModal() {
   }
 
   closeModal(expModal);
-  showToast(navigator.onLine ? "ההוצאה נשמרה" : "ההוצאה נשמרה במכשיר ותסתנכרן בהמשך");
+  showToast(existing
+    ? "השינויים נשמרו"
+    : (navigator.onLine ? "ההוצאה נשמרה" : "ההוצאה נשמרה במכשיר ותסתנכרן בהמשך"));
   saveBtn.dataset.saving = "0";
   saveBtn.disabled = false;
 
@@ -1156,6 +1221,15 @@ function saveExpenseFromModal() {
     refreshSyncDot();
     showToast("שמירת ההוצאה נכשלה. נסו שוב.");
   });
+
+  if (recurringPromise) {
+    recurringPromise.catch((err) => {
+      console.error("Recurring expense save failed:", err);
+      state.pendingRecurringWrites = false;
+      refreshSyncDot();
+      showToast("ההוצאה נשמרה, אבל יצירת הכלל הקבוע נכשלה");
+    });
+  }
 }
 
 bindReliableModalAction(document.getElementById("exp-save"), saveExpenseFromModal);
