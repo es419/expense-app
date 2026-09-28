@@ -170,8 +170,9 @@ function refreshSyncDot() {
     setSyncDot("offline");
     return;
   }
+  const stillLoading = !!state.user && (!state.categoriesLoaded || !state.expensesLoaded || !state.recurringLoaded);
   setSyncDot(
-    state.pendingExpenseWrites || state.pendingCategoryWrites || state.pendingRecurringWrites
+    stillLoading || state.pendingExpenseWrites || state.pendingCategoryWrites || state.pendingRecurringWrites
       ? "busy"
       : "on"
   );
@@ -697,7 +698,7 @@ document.getElementById("budget-alert-threshold").addEventListener("change", (ev
 });
 
 function checkBudgetAlerts() {
-  if (!budgetAlertsEnabled()) return;
+  if (!budgetAlertsEnabled() || pendingDeletedExpenseIds.size > 0) return;
   const now = new Date();
   if (state.currentYear !== now.getFullYear() || state.currentMonth !== now.getMonth()) return;
 
@@ -1014,7 +1015,12 @@ function commitExpenseDelete(id) {
     const expenseRef = db.collection("users").doc(state.user.uid).collection("expenses").doc(id);
     batch.delete(expenseRef);
 
-    if (expense && expense.recurringId && expense.recurringMonth) {
+    if (
+      expense &&
+      expense.recurringId &&
+      expense.recurringMonth &&
+      state.recurringExpenses.some(rule => rule.id === expense.recurringId)
+    ) {
       const recurringRef = db.collection("users").doc(state.user.uid)
         .collection("recurringExpenses").doc(expense.recurringId);
       batch.set(recurringRef, {
@@ -1217,6 +1223,10 @@ function saveExpenseFromModal() {
 
   writePromise.catch((err) => {
     console.error("Expense save failed:", err);
+    if (recurringId && recurringMonth) {
+      recurringEnsuredIds.delete("rec_" + recurringId + "_" + recurringMonth);
+      setTimeout(() => maybeEnsureRecurringCurrentMonth(), 0);
+    }
     state.pendingExpenseWrites = false;
     refreshSyncDot();
     showToast("שמירת ההוצאה נכשלה. נסו שוב.");
