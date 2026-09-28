@@ -1334,6 +1334,185 @@ document.getElementById("cat-delete").addEventListener("click", async () => {
 
 
 // ============================================================
+// RECURRING EXPENSES
+// ============================================================
+const recurringModal = document.getElementById("recurring-modal");
+const recurringRuleModal = document.getElementById("recurring-rule-modal");
+let editingRecurringRuleId = null;
+
+document.getElementById("recurring-btn").addEventListener("click", () => {
+  renderRecurringList();
+  openModal(recurringModal);
+});
+document.getElementById("recurring-close").addEventListener("click", () => closeModal(recurringModal));
+recurringModal.addEventListener("click", (e) => { if (e.target === recurringModal) closeModal(recurringModal); });
+
+document.getElementById("rec-rule-cancel").addEventListener("click", () => closeModal(recurringRuleModal));
+recurringRuleModal.addEventListener("click", (e) => { if (e.target === recurringRuleModal) closeModal(recurringRuleModal); });
+
+function maybeEnsureRecurringCurrentMonth() {
+  if (!state.user || !state.expensesLoaded || !state.recurringLoaded) return;
+
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth();
+  const key = monthKey(year, month);
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+  state.recurringExpenses.forEach(rule => {
+    if (!rule.active) return;
+    if (rule.startMonth && rule.startMonth > key) return;
+    if (Array.isArray(rule.skippedMonths) && rule.skippedMonths.includes(key)) return;
+    if (state.expenses.some(e => e.recurringId === rule.id && e.recurringMonth === key)) return;
+
+    const docId = "rec_" + rule.id + "_" + key;
+    if (recurringEnsuredIds.has(docId)) return;
+    recurringEnsuredIds.add(docId);
+
+    const day = Math.min(Math.max(Number(rule.day || 1), 1), daysInMonth);
+    const date = key + "-" + String(day).padStart(2, "0");
+    state.pendingExpenseWrites = true;
+    refreshSyncDot();
+
+    db.collection("users").doc(state.user.uid).collection("expenses").doc(docId).set({
+      amount: Number(rule.amount || 0),
+      categoryId: rule.categoryId,
+      paymentMethod: rule.paymentMethod || "credit",
+      note: rule.note || "",
+      date,
+      recurringId: rule.id,
+      recurringMonth: key,
+      recurringGenerated: true,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    }, { merge: true }).catch((err) => {
+      console.error("Recurring occurrence creation failed:", err);
+      recurringEnsuredIds.delete(docId);
+      state.pendingExpenseWrites = false;
+      refreshSyncDot();
+      showToast("יצירת הוצאה קבועה נכשלה");
+    });
+  });
+}
+
+function renderRecurringList() {
+  const wrap = document.getElementById("recurring-list");
+  if (!wrap) return;
+  if (!state.recurringExpenses.length) {
+    wrap.innerHTML = '<div class="empty-hint">אין עדיין הוצאות קבועות. אפשר להפוך הוצאה חדשה לקבועה בזמן השמירה.</div>';
+    return;
+  }
+
+  const sorted = [...state.recurringExpenses].sort((a, b) => Number(a.day || 1) - Number(b.day || 1));
+  wrap.innerHTML = sorted.map(rule => {
+    const cat = catById(rule.categoryId);
+    return '<div class="recurring-row" data-id="' + rule.id + '">' +
+      '<span class="cat-dot" style="background:' + cat.color + '"></span>' +
+      '<div class="recurring-main">' +
+        '<div class="recurring-name">' + escapeHtml(rule.note || cat.name) + '</div>' +
+        '<div class="recurring-meta">' + escapeHtml(cat.name) + ' · יום ' + Number(rule.day || 1) + ' · ' + paymentName(rule.paymentMethod) + '</div>' +
+      '</div>' +
+      '<div class="recurring-amount num">' + fmtNum(rule.amount) + ' ₪</div>' +
+      '<label class="mini-toggle" title="הפעלה / השהיה">' +
+        '<input type="checkbox" class="recurring-toggle" data-id="' + rule.id + '" ' + (rule.active ? "checked" : "") + '>' +
+      '</label>' +
+      '<button class="row-action recurring-edit" data-id="' + rule.id + '">עריכה</button>' +
+      '<button class="row-action danger recurring-delete" data-id="' + rule.id + '">מחיקה</button>' +
+    '</div>';
+  }).join("");
+
+  wrap.querySelectorAll(".recurring-toggle").forEach(input => {
+    input.addEventListener("change", () => {
+      state.pendingRecurringWrites = true;
+      refreshSyncDot();
+      db.collection("users").doc(state.user.uid).collection("recurringExpenses").doc(input.dataset.id)
+        .set({ active: input.checked, updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true })
+        .catch(err => {
+          console.error(err);
+          input.checked = !input.checked;
+          state.pendingRecurringWrites = false;
+          refreshSyncDot();
+          showToast("עדכון ההוצאה הקבועה נכשל");
+        });
+    });
+  });
+
+  wrap.querySelectorAll(".recurring-edit").forEach(btn => {
+    btn.addEventListener("click", () => openRecurringRuleEditor(btn.dataset.id));
+  });
+  wrap.querySelectorAll(".recurring-delete").forEach(btn => {
+    btn.addEventListener("click", () => deleteRecurringRule(btn.dataset.id));
+  });
+}
+
+function openRecurringRuleEditor(id) {
+  const rule = state.recurringExpenses.find(r => r.id === id);
+  if (!rule) return;
+  editingRecurringRuleId = id;
+
+  const catSelect = document.getElementById("rec-rule-category");
+  catSelect.innerHTML = state.categories.map(c =>
+    '<option value="' + c.id + '">' + escapeHtml(c.name) + '</option>'
+  ).join("");
+  catSelect.value = rule.categoryId;
+
+  document.getElementById("rec-rule-amount").value = rule.amount;
+  document.getElementById("rec-rule-payment").value = rule.paymentMethod || "credit";
+  document.getElementById("rec-rule-day").value = Number(rule.day || 1);
+  document.getElementById("rec-rule-note").value = rule.note || "";
+  document.getElementById("rec-rule-active").checked = !!rule.active;
+
+  closeModal(recurringModal);
+  openModal(recurringRuleModal);
+}
+
+function saveRecurringRule() {
+  if (!state.user || !editingRecurringRuleId) return;
+  const amount = parseFloat(document.getElementById("rec-rule-amount").value);
+  const categoryId = document.getElementById("rec-rule-category").value;
+  const paymentMethod = document.getElementById("rec-rule-payment").value;
+  const day = Math.min(31, Math.max(1, parseInt(document.getElementById("rec-rule-day").value, 10) || 1));
+  const note = document.getElementById("rec-rule-note").value.trim();
+  const active = document.getElementById("rec-rule-active").checked;
+
+  if (!amount || amount <= 0) { showToast("נא להזין סכום תקין"); return; }
+  if (!categoryId) { showToast("נא לבחור קטגוריה"); return; }
+
+  state.pendingRecurringWrites = true;
+  refreshSyncDot();
+  db.collection("users").doc(state.user.uid).collection("recurringExpenses").doc(editingRecurringRuleId)
+    .set({
+      amount, categoryId, paymentMethod, day, note, active,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    }, { merge: true })
+    .catch(err => {
+      console.error(err);
+      state.pendingRecurringWrites = false;
+      refreshSyncDot();
+      showToast("שמירת ההוצאה הקבועה נכשלה");
+    });
+
+  closeModal(recurringRuleModal);
+  showToast("ההוצאה הקבועה עודכנה");
+}
+
+bindReliableModalAction(document.getElementById("rec-rule-save"), saveRecurringRule);
+
+function deleteRecurringRule(id) {
+  if (!state.user) return;
+  if (!confirm("למחוק את ההוצאה הקבועה? הוצאות שכבר נוצרו יישארו.")) return;
+  state.pendingRecurringWrites = true;
+  refreshSyncDot();
+  db.collection("users").doc(state.user.uid).collection("recurringExpenses").doc(id).delete()
+    .catch(err => {
+      console.error(err);
+      state.pendingRecurringWrites = false;
+      refreshSyncDot();
+      showToast("מחיקת ההוצאה הקבועה נכשלה");
+    });
+}
+
+// ============================================================
 // NATIVE-STYLE MOBILE KEYBOARD EDITOR — EXPENSE MODALS
 // Scoped only to the currently open modal. The modal/background stay fixed;
 // only the active text/number field is detached above the iOS keyboard.
