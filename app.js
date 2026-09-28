@@ -100,6 +100,8 @@ let state = {
   unsubCategories: null,
   categoriesLoaded: false,
   expensesLoaded: false,
+  pendingExpenseWrites: false,
+  pendingCategoryWrites: false,
 };
 
 let chartInstance = null;
@@ -127,6 +129,9 @@ function setSyncDot(mode) {
   dot.classList.remove("on", "busy");
   if (mode === "on") dot.classList.add("on");
   if (mode === "busy") dot.classList.add("busy");
+}
+function refreshSyncDot() {
+  setSyncDot(state.pendingExpenseWrites || state.pendingCategoryWrites ? "busy" : "on");
 }
 function catById(id) {
   return state.categories.find(c => c.id === id) || { id: "other", name: "אחר", color: "#7A7368", budget: 0 };
@@ -301,9 +306,18 @@ function attachListeners(uid) {
 
   // Categories (single doc holding array, simplest for small personal lists)
   const catDocRef = db.collection("users").doc(uid).collection("meta").doc("categories");
-  state.unsubCategories = catDocRef.onSnapshot(async (snap) => {
+  state.unsubCategories = catDocRef.onSnapshot({ includeMetadataChanges: true }, async (snap) => {
+    state.pendingCategoryWrites = snap.metadata.hasPendingWrites;
+    refreshSyncDot();
     if (!snap.exists) {
-      await catDocRef.set({ list: DEFAULT_CATEGORIES });
+      state.pendingCategoryWrites = true;
+      refreshSyncDot();
+      catDocRef.set({ list: DEFAULT_CATEGORIES }).catch((err) => {
+        console.error("Default category save failed:", err);
+        state.pendingCategoryWrites = false;
+        refreshSyncDot();
+        showToast("שגיאת סנכרון קטגוריות");
+      });
       return;
     }
     state.categories = snap.data().list || [];
@@ -312,19 +326,23 @@ function attachListeners(uid) {
     renderAll();
   }, (err) => {
     console.error(err);
+    state.pendingCategoryWrites = false;
+    setSyncDot("busy");
     showToast("שגיאת סנכרון קטגוריות");
   });
 
   // Expenses collection, ordered by date desc
   const expRef = db.collection("users").doc(uid).collection("expenses");
-  state.unsubExpenses = expRef.orderBy("date", "desc").onSnapshot((snap) => {
+  state.unsubExpenses = expRef.orderBy("date", "desc").onSnapshot({ includeMetadataChanges: true }, (snap) => {
     state.expenses = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     state.expensesLoaded = true;
+    state.pendingExpenseWrites = snap.metadata.hasPendingWrites;
     if (state.categoriesLoaded && state.expensesLoaded) hideBootLoader();
-    setSyncDot("on");
+    refreshSyncDot();
     renderAll();
   }, (err) => {
     console.error(err);
+    state.pendingExpenseWrites = false;
     setSyncDot("busy");
     showToast("שגיאת סנכרון הוצאות");
   });
@@ -337,12 +355,14 @@ function detachListeners() {
   state.categories = [];
   state.categoriesLoaded = false;
   state.expensesLoaded = false;
+  state.pendingExpenseWrites = false;
+  state.pendingCategoryWrites = false;
 }
 
-function saveCategories() {
-  if (!state.user) return;
+function saveCategories(list = state.categories) {
+  if (!state.user) return null;
   return db.collection("users").doc(state.user.uid).collection("meta").doc("categories")
-    .set({ list: state.categories });
+    .set({ list });
 }
 
 // ============================================================
@@ -656,6 +676,29 @@ async function deleteExpense(id) {
 }
 
 // ============================================================
+// RELIABLE MODAL ACTIONS
+// ============================================================
+// iOS can cancel the synthetic click when a focused input is restored/moved as
+// the keyboard closes. Handle the touch end directly and suppress the duplicate
+// click, while keeping normal click behavior for mouse/keyboard users.
+function bindReliableModalAction(button, handler) {
+  let lastTouchAt = 0;
+
+  button.addEventListener("touchend", (event) => {
+    lastTouchAt = Date.now();
+    event.preventDefault();
+    const active = document.activeElement;
+    if (active && typeof active.blur === "function") active.blur();
+    handler(event);
+  }, { passive: false });
+
+  button.addEventListener("click", (event) => {
+    if (Date.now() - lastTouchAt < 700) return;
+    handler(event);
+  });
+}
+
+// ============================================================
 // ADD EXPENSE MODAL
 // ============================================================
 const expModal = document.getElementById("expense-modal");
@@ -704,7 +747,7 @@ function renderExpCatChips() {
   });
 }
 
-document.getElementById("exp-save").addEventListener("click", async () => {
+function saveExpenseFromModal() {
   const amount = parseFloat(document.getElementById("exp-amount").value);
   const date = document.getElementById("exp-date").value;
   const note = document.getElementById("exp-note").value.trim();
@@ -712,15 +755,47 @@ document.getElementById("exp-save").addEventListener("click", async () => {
   if (!amount || amount <= 0) { showToast("נא להזין סכום תקין"); return; }
   if (!selectedExpCat) { showToast("נא לבחור קטגוריה"); return; }
   if (!date) { showToast("נא לבחור תאריך"); return; }
+  if (!state.user) { showToast("החיבור לחשבון אבד. התחברו מחדש."); return; }
 
-  await db.collection("users").doc(state.user.uid).collection("expenses").add({
-    amount, categoryId: selectedExpCat, paymentMethod: selectedExpPayment, date, note,
-    createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-  });
+  const saveBtn = document.getElementById("exp-save");
+  if (saveBtn.dataset.saving === "1") return;
+  saveBtn.dataset.saving = "1";
+  saveBtn.disabled = true;
+
+  state.pendingExpenseWrites = true;
+  refreshSyncDot();
+
+  let writePromise;
+  try {
+    const docRef = db.collection("users").doc(state.user.uid).collection("expenses").doc();
+    writePromise = docRef.set({
+      amount, categoryId: selectedExpCat, paymentMethod: selectedExpPayment, date, note,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+    });
+  } catch (err) {
+    console.error("Expense save failed:", err);
+    state.pendingExpenseWrites = false;
+    refreshSyncDot();
+    saveBtn.dataset.saving = "0";
+    saveBtn.disabled = false;
+    showToast("שמירת ההוצאה נכשלה. נסו שוב.");
+    return;
+  }
 
   closeModal(expModal);
-  showToast("ההוצאה נשמרה");
-});
+  showToast(navigator.onLine ? "ההוצאה נשמרה" : "ההוצאה נשמרה במכשיר ותסתנכרן בהמשך");
+  saveBtn.dataset.saving = "0";
+  saveBtn.disabled = false;
+
+  writePromise.catch((err) => {
+    console.error("Expense save failed:", err);
+    state.pendingExpenseWrites = false;
+    refreshSyncDot();
+    showToast("שמירת ההוצאה נכשלה. נסו שוב.");
+  });
+}
+
+bindReliableModalAction(document.getElementById("exp-save"), saveExpenseFromModal);
 
 // ============================================================
 // CATEGORY MODAL
@@ -759,22 +834,56 @@ function renderColorChips() {
   });
 }
 
-document.getElementById("cat-save").addEventListener("click", async () => {
+function saveCategoryFromModal() {
   const name = document.getElementById("cat-name").value.trim();
   const budget = parseFloat(document.getElementById("cat-budget").value) || 0;
   if (!name) { showToast("נא להזין שם קטגוריה"); return; }
+  if (!state.user) { showToast("החיבור לחשבון אבד. התחברו מחדש."); return; }
+
+  const previousCategories = state.categories;
+  let nextCategories = state.categories.map((c) => ({ ...c }));
 
   if (state.editingCategoryId) {
-    const idx = state.categories.findIndex(c => c.id === state.editingCategoryId);
-    if (idx > -1) state.categories[idx] = { ...state.categories[idx], name, budget, color: selectedCatColor };
+    const idx = nextCategories.findIndex(c => c.id === state.editingCategoryId);
+    if (idx > -1) nextCategories[idx] = { ...nextCategories[idx], name, budget, color: selectedCatColor };
   } else {
     const id = "cat_" + Date.now();
-    state.categories.push({ id, name, budget, color: selectedCatColor });
+    nextCategories.push({ id, name, budget, color: selectedCatColor });
   }
-  await saveCategories();
+
+  state.categories = nextCategories;
+  state.pendingCategoryWrites = true;
+  refreshSyncDot();
+  renderAll();
+
+  let writePromise;
+  try {
+    writePromise = saveCategories(nextCategories);
+    if (!writePromise) throw new Error("No authenticated user");
+  } catch (err) {
+    console.error("Category save failed:", err);
+    state.categories = previousCategories;
+    state.pendingCategoryWrites = false;
+    refreshSyncDot();
+    renderAll();
+    showToast("שמירת הקטגוריה נכשלה. נסו שוב.");
+    return;
+  }
+
   closeModal(catModal);
-  showToast("הקטגוריה נשמרה");
-});
+  showToast(navigator.onLine ? "הקטגוריה נשמרה" : "הקטגוריה נשמרה במכשיר ותסתנכרן בהמשך");
+
+  writePromise.catch((err) => {
+    console.error("Category save failed:", err);
+    state.categories = previousCategories;
+    state.pendingCategoryWrites = false;
+    refreshSyncDot();
+    renderAll();
+    showToast("שמירת הקטגוריה נכשלה. נסו שוב.");
+  });
+}
+
+bindReliableModalAction(document.getElementById("cat-save"), saveCategoryFromModal);
 
 document.getElementById("cat-delete").addEventListener("click", async () => {
   if (!state.editingCategoryId) return;
